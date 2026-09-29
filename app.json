@@ -7,10 +7,6 @@
     "icon": "./assets/icon.png",
     "scheme": "geocam",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
-    "splash": {
-      "backgroundColor": "#000000"
-    },
     "ios": {
       "supportsTablet": true
     },
@@ -39,7 +35,8 @@
         {
           "photosPermission": "GeoCam accede a tu galería para importar fotos."
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }
