@@ -123,9 +123,18 @@ export default function GeoCamScreen() {
           style={styles.locationBanner}
         >
           <Text style={styles.bannerText}>
-            ⚠️ Activa la ubicación para etiquetar tus fotos
+            {geo.permission === 'blocked'
+              ? 'Ubicación bloqueada. Toca aquí para Abrir Ajustes'
+              : 'Activa la ubicación para etiquetar tus fotos'}
           </Text>
         </Pressable>
+      )}
+
+      {/* Los errores de ubicación llegan a la UI como estado */}
+      {geo.error && (
+        <View style={styles.errorBadge}>
+          <Text style={styles.errorText}>{geo.error}</Text>
+        </View>
       )}
 
       {/* Coordenadas en vivo cuando el GPS está activo */}
@@ -212,6 +221,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontWeight: '600',
     fontSize: 14,
+  },
+  errorBadge: {
+    position: 'absolute',
+    top: 110,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(239, 68, 68, 0.95)',
+    borderRadius: 8,
+    padding: 8,
+    zIndex: 10,
+  },
+  errorText: {
+    color: '#ffffff',
+    fontSize: 12,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   coordsBadge: {
     position: 'absolute',
