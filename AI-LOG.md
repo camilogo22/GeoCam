@@ -1,69 +1,184 @@
-# Registro de Auditoría de IA (AI-LOG)
+# 📋 Registro de Auditoría de Inteligencia Artificial (AI-LOG)
 
-**Estudiante(s):** Camilo Gomez  
-**Semana:** 6  
-**Proyecto:** GeoCam – Taller Integrador 2 (Módulos Nativos y Sensores del Dispositivo)  
-
----
-
-## 1. Prompts Utilizados
-- *"Escribe un Custom Hook en React Native con TypeScript que detecte cuando el usuario agita el teléfono usando expo-sensors, con umbral configurable, frecuencia de actualización controlada y prevención de memory leaks."*
-- *"Implementa un hook en Expo para gestionar la cámara frontal/trasera y captura de fotografías con prevención de doble pulsación en Android usando la nueva arquitectura."*
-- *"Crea un hook useGeoLocation en Expo con máquina de estados de permisos (checking, undetermined, granted, denied, blocked), consulta bajo demanda, watchPositionAsync y degradación elegante si el permiso es rechazado."*
+> **Materia:** Desarrollo Móvil — Taller Integrador 2  
+> **Semana:** 6 — Módulos Nativos y Sensores del Dispositivo  
+> **Proyecto:** GeoCam  
+> **Estudiante:** **Camilo Gomez**  
+> **Docente de referencia:** @AntonioJGL  
+> **Ecosistema:** Expo SDK 57 • React Native 0.86 (New Architecture) • TypeScript
 
 ---
 
-## 2. Código Generado vs. Código Modificado
+> [!NOTE]
+> Este documento registra de manera formal la auditoría técnica realizada sobre el código asistido por IA durante el desarrollo del proyecto **GeoCam**. Su objetivo es identificar alucinaciones, APIs obsoletas y malas prácticas en el acceso a hardware nativo, documentando las correcciones implementadas según los estándares modernos de Expo.
+
+---
+
+## 🎯 1. Prompts Utilizados y Objetivos Técnicos
+
+| # | Prompt Ejecutado | Objetivo Técnico | Resultado Obtenido |
+| :---: | :--- | :--- | :--- |
+| **P1** | *"Escribe un Custom Hook en React Native con TypeScript que detecte cuando el usuario agita el teléfono usando expo-sensors, con umbral configurable y prevención de fugas de memoria."* | Encapsular el acelerómetro con frecuencia controlada, cálculo vectorial y limpieza de suscripción. | Generó un hook funcional pero con errores críticos de frecuencia de muestreo y sin protección contra suscripciones huérfanas. |
+| **P2** | *"Implementa un hook useCamera con la nueva API de Expo Camera (CameraView) que evite colapsos por doble pulsación y permita alternar entre cámara frontal y trasera."* | Manejar el ciclo de cámara nativa con estados de preparación (`onCameraReady`) y guarda de concurrencia. | Propuso la sintaxis moderna pero intentó anidar controles hijos dentro del componente `<CameraView>`. |
+| **P3** | *"Crea un hook useGeoLocation con máquina de estados de permisos completa (checking, undetermined, granted, denied, blocked) y degradación elegante si el usuario rechaza el GPS."* | Implementar el flujo UX recomendado por Apple/Google: consulta pasiva inicial y solicitud explícita bajo demanda. | Propuso solicitar permisos de inmediato en el montaje del componente, violando las pautas de UX móvil. |
+
+---
+
+## 🔬 2. Análisis Comparativo: Código Generado vs. Código Modificado
 
 ### 2.1 Sensor de Agitado (`hooks/useShake.ts`)
-- **¿Qué generó la IA?:** Un hook que invocaba `Accelerometer.addListener` directamente dentro del callback de `useEffect` sin verificar disponibilidad del sensor, sin definir `setUpdateInterval` (ejecutándose a máxima frecuencia y agotando batería), disparando el callback decenas de veces por cada sacudida física y recreando la suscripción en cada render.
-- **¿Qué modifiqué/corregí?:**
-  1. Agregué verificación previa con `await Accelerometer.isAvailableAsync()`.
-  2. Fijé el intervalo de actualización a 100 ms (`Accelerometer.setUpdateInterval(100)`).
-  3. Almacené el callback `onShake` en un `useRef` para evitar reiniciar la suscripción nativa innecesariamente.
-  4. Implementé un tiempo de enfriamiento (`cooldownMs: 1000`) para registrar una única acción por sacudida.
-  5. Aseguré la limpieza de la suscripción con `subscription?.remove()` y bandera `cancelled = true`.
 
-### 2.2 Ciclo de Permisos de Ubicación (`hooks/useGeoLocation.ts`)
-- **¿Qué generó la IA?:** Una llamada a `Location.requestForegroundPermissionsAsync()` tan pronto como el componente se montaba en pantalla.
-- **¿Qué modifiqué/corregí?:** Apliqué el principio de buenas prácticas de UX de la guía: al montar el componente solo se debe **consultar** el estado previo con `Location.getForegroundPermissionsAsync()`, reservando la solicitud explícita (`requestForegroundPermissionsAsync()`) únicamente cuando el usuario presione un botón de acción en pantalla.
+> [!WARNING]
+> **Deficiencia de la IA:** La IA omitió configurar el intervalo de actualización del sensor (`setUpdateInterval`), lo que provoca que el acelerómetro opere a máxima frecuencia (hasta 200 Hz en Android), drenando la batería en minutos. Además, no implementó tiempo de enfriamiento (*cooldown*), disparando el callback decenas de veces con un solo movimiento físico.
+
+#### 🔄 Comparativa de Código (Diff Técnico):
+
+```diff
+- // ❌ Código generado inicialmente por la IA
+- useEffect(() => {
+-   const subscription = Accelerometer.addListener(({ x, y, z }) => {
+-     const total = Math.sqrt(x * x + y * y + z * z);
+-     if (total > 1.78) {
+-       onShake(); // ⚠️ Se dispara 20-30 veces por cada sacudida
+-     }
+-   });
+-   return () => subscription.remove();
+- }, [onShake]); // ⚠️ Recrea el listener nativo en cada re-render
+
++ // ✅ Código refactorizado y corregido
++ const callbackRef = useRef(onShake);
++ callbackRef.current = onShake;
++ const lastShakeTime = useRef<number>(0);
++
++ useEffect(() => {
++   if (Platform.OS === 'web') { setIsAvailable(false); return; }
++   let cancelled = false;
++   let subscription: { remove: () => void } | null = null;
++
++   Accelerometer.isAvailableAsync().then((available) => {
++     if (cancelled || !available) return;
++     Accelerometer.setUpdateInterval(100); // ⚡ 100 ms: balance óptimo batería/gesto
++
++     subscription = Accelerometer.addListener(({ x, y, z }) => {
++       const magnitude = Math.sqrt(x * x + y * y + z * z);
++       const now = Date.now();
++       // 🛡️ Filtro con cooldown de 1000 ms para evento único
++       if (magnitude > threshold && now - lastShakeTime.current > cooldownMs) {
++         lastShakeTime.current = now;
++         callbackRef.current();
++       }
++     });
++   });
++   return () => {
++     cancelled = true;
++     subscription?.remove();
++   };
++ }, [threshold, cooldownMs]);
+```
 
 ---
 
-## 3. Alucinaciones o Errores Detectados
+### 2.2 Ciclo de Permisos y Degradación de GPS (`hooks/useGeoLocation.ts`)
 
-1. **Alucinación 1 (API de Cámara Deprecada):**  
-   - *Error de la IA:* Usó `import { Camera } from 'expo-camera'` e invocó `Camera.requestCameraPermissionsAsync()`.  
-   - *Corrección:* En las versiones modernas de Expo, el componente obsoleto `Camera` fue reemplazado por `CameraView` y el hook `useCameraPermissions()`.
+> [!IMPORTANT]
+> **Regla de UX de Autorización:** Nunca se deben pedir permisos en el evento `mount` de la pantalla. En iOS, si el usuario deniega el permiso una sola vez, la app queda permanentemente bloqueada. La consulta inicial debe ser puramente pasiva con `getForegroundPermissionsAsync()`.
 
-2. **Alucinación 2 (Jerarquía de Componentes de Cámara):**  
-   - *Error de la IA:* Intentó anidar los controles de disparo y la barra inferior directamente como hijos dentro de `<CameraView> ... </CameraView>`.  
-   - *Corrección:* `CameraView` no admite componentes hijos. Los controles se implementaron como hermanos superpuestos utilizando posición absoluta (`StyleSheet.absoluteFill` y `position: 'absolute'`).
+#### 🔄 Comparativa de Código (Diff Técnico):
 
-3. **Alucinación 3 (Sintaxis obsoleta de ImagePicker):**  
-   - *Error de la IA:* Intentó configurar el selector de imágenes con `mediaTypes: ImagePicker.MediaTypeOptions.Images`.  
-   - *Corrección:* Se actualizó a la sintaxis del SDK actual: `mediaTypes: ['images']`.
+```diff
+- // ❌ Mala práctica propuesta por la IA (Pedir permiso al arrancar)
+- useEffect(() => {
+-   Location.requestForegroundPermissionsAsync().then((res) => {
+-     setPermission(res.granted ? 'granted' : 'denied');
+-   });
+- }, []);
 
-4. **Alucinación 4 (Suscripciones huérfanas en llamadas asíncronas):**  
-   - *Error de la IA:* Omitió la bandera `cancelled` en la resolución de `Location.watchPositionAsync()`.  
-   - *Corrección:* Al ser una llamada asíncrona, si el usuario sale de la pantalla antes de resolverse la promesa, la suscripción quedaba huérfana y continuaba consumiendo GPS. Se agregó la guarda `if (cancelled) sub.remove()`.
-
-5. **Error detectado 5 (Incompatibilidad de expo-sensors en Web):**  
-   - *Problema:* Al ejecutar la app en navegador web, `Accelerometer.isAvailableAsync()` resolvía en verdadero pero `ExponentAccelerometer.web.js` carece del método `addListener`, arrojando `TypeError: this._nativeModule.addListener is not a function`.  
-   - *Corrección:* Se integró una comprobación `Platform.OS === 'web'` en `hooks/useShake.ts` junto con un bloque `try/catch` de contingencia para desactivar el sensor con degradación elegante cuando se pruebe desde un navegador.
++ // ✅ Solución implementada (Consulta pasiva + solicitud en contexto)
++ useEffect(() => {
++   let cancelled = false;
++   // 👁️ Solo consulta el estado actual sin mostrar diálogo invasivo
++   Location.getForegroundPermissionsAsync()
++     .then((res) => {
++       if (!cancelled) setState((s) => ({ ...s, permission: mapPermission(res) }));
++     })
++     .catch(() => {
++       if (!cancelled) setState((s) => ({ ...s, permission: 'denied' }));
++     });
++   return () => { cancelled = true; };
++ }, []);
++
++ // 🚀 La solicitud real solo se ejecuta cuando el usuario pulsa el botón
++ const requestPermission = useCallback(async (): Promise<boolean> => {
++   const res = await Location.requestForegroundPermissionsAsync();
++   setState((s) => ({ ...s, permission: mapPermission(res) }));
++   return res.granted;
++ }, []);
+```
 
 ---
 
-## 4. Matriz de Auditoría Oficial: Código IA vs Corrección
+## 🚫 3. Catálogo Detallado de Alucinaciones y Errores Detectados
 
-| Lo que la IA suele generar | Problema Técnico | Corrección Implementada |
-| :--- | :--- | :--- |
-| `import { Camera } from 'expo-camera'` con `Camera.requestCameraPermissionsAsync()` | API antigua, reemplazada y deprecada | `CameraView` + `useCameraPermissions()` |
-| `import * as Permissions from 'expo-permissions'` | Paquete obsoleto y retirado del core de Expo | Permisos desde cada módulo nativo (ej. `Location.requestForegroundPermissionsAsync()`) |
-| `mediaTypes: ImagePicker.MediaTypeOptions.Images` | Opción obsoleta en SDK actual | `mediaTypes: ['images']` |
-| Controles de botones como hijos directos de `<CameraView>` | No soportado, comportamiento inconsistente y fallas visuales | Controles hermanos superpuestos con posición absoluta (`StyleSheet.absoluteFill`) |
-| `watchPositionAsync` o `addListener` sin `.remove()` | Fuga de batería y memoria (hilos nativos huérfanos) | Cleanup en `useEffect` con bandera `cancelled = true` y `sub.remove()` |
-| Pedir todos los permisos de golpe al iniciar la app | Mala UX; en iOS se pierde la única oportunidad | Pedir en contexto con pantalla previa explicativa (`PermissionPrimer`) |
-| `npm install expo-camera` | Posible versión incompatible con el SDK de Expo | `npx expo install expo-camera` |
-| `requestBackgroundPermissionsAsync` para etiquetar fotos | Permiso excesivo e innecesario, rechazo en tiendas | Solo permisos de primer plano (`getForegroundPermissionsAsync`) |
+### ❌ Caso 1: API de Cámara Deprecada
+* **Alucinación:** `import { Camera } from 'expo-camera'` con llamadas a `Camera.requestCameraPermissionsAsync()`.
+* **Causa:** Los modelos de lenguaje fueron entrenados con versiones legacy de Expo (SDK 48-50) donde la clase `Camera` era el estándar.
+* **Impacto:** En el SDK 51+ y la New Architecture, dicha API fue retirada en favor de componentes modulares.
+* **Corrección:** Se migró a `CameraView` y al hook oficial `useCameraPermissions()`.
 
+### ❌ Caso 2: Violación de Jerarquía en `<CameraView>`
+* **Alucinación:** La IA intentó escribir:
+  ```tsx
+  <CameraView>
+    <Pressable onPress={takePhoto}><Text>Disparar</Text></Pressable>
+  </CameraView>
+  ```
+* **Causa:** En versiones antiguas de `expo-camera`, el componente admitía elementos hijos como hijos directos.
+* **Impacto:** `CameraView` moderno **no soporta hijos directos**, generando comportamientos visuales erráticos y botones no clickeables en Android/iOS.
+* **Corrección:** Se implementaron los controles como componentes hermanos superpuestos con posición absoluta (`StyleSheet.absoluteFill`).
+
+### ❌ Caso 3: Constantes Deprecadas en `ImagePicker`
+* **Alucinación:** `mediaTypes: ImagePicker.MediaTypeOptions.Images`.
+* **Causa:** La enumeración `MediaTypeOptions` fue declarada obsoleta en las últimas versiones del SDK.
+* **Corrección:** Uso del arreglo directo de cadenas: `mediaTypes: ['images']`.
+
+### ❌ Caso 4: Fuga de Recursos por Suscripciones Asíncronas Huérfanas
+* **Alucinación:**
+  ```tsx
+  useEffect(() => {
+    Location.watchPositionAsync({}, (loc) => setCoords(loc.coords));
+  }, []);
+  ```
+* **Impacto Crítico:** 
+  1. No guarda la referencia para ejecutar `subscription.remove()`, dejando el GPS activo indefinidamente.
+  2. Como `watchPositionAsync` es una promesa asíncrona, si el usuario abandona la pantalla antes de resolverse, la suscripción se inicia pero nadie la puede cancelar (*suscripción huérfana*).
+* **Corrección:** Se implementó el patrón de bandera booleana `let cancelled = false;` evaluada en el `.then(sub => if (cancelled) sub.remove())`.
+
+### ❌ Caso 5: Excepción Nativa en Entorno Web (`expo-sensors`)
+* **Alucinación / Error de Módulo:** En navegadores de escritorio, `Accelerometer.isAvailableAsync()` retornaba `true`, pero el módulo `ExponentAccelerometer.web.js` carece del método `addListener`, provocando:
+  ```text
+  TypeError: this._nativeModule.addListener is not a function
+  ```
+* **Corrección:** Se agregó la guarda condicional `Platform.OS === 'web'` en `useShake.ts` junto con un bloque `try/catch` para apagar el sensor elegantemente en la web y no bloquear las pruebas.
+
+---
+
+## 📊 4. Matriz Oficial de Auditoría: IA vs. Estándar Expo SDK 57
+
+| Característica / API | Generado por la IA ❌ | Problema Técnico ⚠️ | Estándar Oficial Implementado ✅ |
+| :--- | :--- | :--- | :--- |
+| **Acceso a Cámara** | `import { Camera } from 'expo-camera'` | API heredada y deprecada en SDK 51+ | `import { CameraView, useCameraPermissions } from 'expo-camera'` |
+| **Gestión de Permisos** | `import * as Permissions from 'expo-permissions'` | Paquete eliminado del núcleo de Expo | Permisos independientes por módulo (`Location.requestForegroundPermissionsAsync()`) |
+| **Selector de Medios** | `mediaTypes: ImagePicker.MediaTypeOptions.Images` | Propiedad obsoleta | `mediaTypes: ['images']` |
+| **Estructura de Cámara** | Botones e interfaces dentro de `<CameraView>` | Sin soporte de hijos en `CameraView` | Controles superpuestos en posición absoluta con z-index |
+| **Limpieza de Hardware** | `watchPositionAsync` sin función de cleanup | Consumo continuo de batería y GPS activo | Retorno de función de limpieza con `.remove()` y bandera `cancelled` |
+| **Estrategia de Permisos** | Solicitar todo en el `useEffect` de montaje | Rechazo prematuro por el usuario (especialmente en iOS) | Petición contextual mediada por el componente `PermissionPrimer` |
+| **Instalación de Paquetes** | `npm install expo-camera expo-location` | Incompatibilidad de versiones menores con el SDK | `npx expo install expo-camera expo-location` |
+| **Alcance de Ubicación** | `requestBackgroundPermissionsAsync` para fotos | Permiso intrusivo que ocasiona rechazo en Google Play | Exclusivamente ubicación en primer plano (`Foreground`) |
+
+---
+
+## 💡 5. Conclusiones y Aprendizajes
+
+1. **La IA tiende a congelarse en el tiempo:** Las herramientas de IA generan con frecuencia código de versiones anteriores de Expo (SDK 48 a 50). Es indispensable cotejar siempre las sugerencias contra la documentación oficial de la versión instalada (`expo` en `package.json`).
+2. **El hardware exige ciclo de vida responsable:** El acceso a sensores físicos (cámara, acelerómetro, GPS) no puede tratarse como llamadas HTTP normales; cada suscripción que se abre **debe cerrarse explícitamente** para evitar degradación del rendimiento del dispositivo.
+3. **La arquitectura de tipos protege la UX:** Tipar `coords: Coords | null` en TypeScript obligó al compilador a verificar en cada pantalla qué ocurre cuando no hay señal de GPS, logrando una **degradación elegante** sin caídas inesperadas de la aplicación.
