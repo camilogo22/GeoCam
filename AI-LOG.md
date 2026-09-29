@@ -1,6 +1,6 @@
 # Registro de Auditoría de IA (AI-LOG)
 
-**Estudiante(s):** Estudiante Móvil  
+**Estudiante(s):** Camilo Gomez  
 **Semana:** 6  
 **Proyecto:** GeoCam – Taller Integrador 2 (Módulos Nativos y Sensores del Dispositivo)  
 

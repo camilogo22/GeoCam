@@ -2,7 +2,8 @@
 
 Aplicación móvil desarrollada con **Expo**, **React Native** y **TypeScript** para el Taller Integrador de la Semana 6.
 
-GeoCam permite capturar e importar fotos etiquetadas con coordenadas GPS en tiempo real, visualizar las fotos en un mapa interactivo con pines y miniaturas, y borrar todas las fotos agitando el dispositivo mediante el sensor de acelerómetro.
+**Desarrollador:** Camilo Gomez  
+**Semana:** 6 — Módulos Nativos y Sensores del Dispositivo  
 
 ---
 

@@ -1,7 +1,8 @@
 # Guía Completa de Desarrollo: GeoCam (Semana 6)
 **Módulos Nativos y Sensores del Dispositivo**  
 *Materia: Desarrollo Móvil — Taller Integrador 2*  
-*Autor de referencia: @AntonioJGL | Fecha: Sep 2026*
+*Estudiante / Desarrollador:* **Camilo Gomez**  
+*Autor de referencia:* @AntonioJGL | *Fecha:* Sep 2026  
 
 ---
 
