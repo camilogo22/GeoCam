@@ -31,88 +31,101 @@
 > [!WARNING]
 > **Deficiencia de la IA:** La IA omitió configurar el intervalo de actualización del sensor (`setUpdateInterval`), lo que provoca que el acelerómetro opere a máxima frecuencia (hasta 200 Hz en Android), drenando la batería en minutos. Además, no implementó tiempo de enfriamiento (cooldown), disparando el callback decenas de veces con un solo movimiento físico.
 
-#### Comparativa de Código (Diff Técnico):
+#### Codigo Inicial Propuesto por la IA:
 
-```diff
-- // Código generado inicialmente por la IA
-- useEffect(() => {
--   const subscription = Accelerometer.addListener(({ x, y, z }) => {
--     const total = Math.sqrt(x * x + y * y + z * z);
--     if (total > 1.78) {
--       onShake(); // Se dispara 20-30 veces por cada sacudida
--     }
--   });
--   return () => subscription.remove();
-- }, [onShake]); // Recrea el listener nativo en cada re-render
+```typescript
+// Codigo generado inicialmente por la IA
+useEffect(() => {
+  const subscription = Accelerometer.addListener(({ x, y, z }) => {
+    const total = Math.sqrt(x * x + y * y + z * z);
+    if (total > 1.78) {
+      onShake(); // Se dispara 20-30 veces por cada sacudida
+    }
+  });
+  return () => subscription.remove();
+}, [onShake]); // Recrea el listener nativo en cada re-render
+```
 
-+ // Código refactorizado y corregido
-+ const callbackRef = useRef(onShake);
-+ callbackRef.current = onShake;
-+ const lastShakeTime = useRef<number>(0);
-+
-+ useEffect(() => {
-+   if (Platform.OS === 'web') { setIsAvailable(false); return; }
-+   let cancelled = false;
-+   let subscription: { remove: () => void } | null = null;
-+
-+   Accelerometer.isAvailableAsync().then((available) => {
-+     if (cancelled || !available) return;
-+     Accelerometer.setUpdateInterval(100); // 100 ms: balance óptimo batería/gesto
-+
-+     subscription = Accelerometer.addListener(({ x, y, z }) => {
-+       const magnitude = Math.sqrt(x * x + y * y + z * z);
-+       const now = Date.now();
-+       // Filtro con cooldown de 1000 ms para evento único
-+       if (magnitude > threshold && now - lastShakeTime.current > cooldownMs) {
-+         lastShakeTime.current = now;
-+         callbackRef.current();
-+       }
-+     });
-+   });
-+   return () => {
-+     cancelled = true;
-+     subscription?.remove();
-+   };
-+ }, [threshold, cooldownMs]);
+#### Codigo Final Modificado y Corregido:
+
+```typescript
+// Codigo refactorizado y corregido
+const callbackRef = useRef(onShake);
+callbackRef.current = onShake;
+const lastShakeTime = useRef<number>(0);
+
+useEffect(() => {
+  if (Platform.OS === 'web') {
+    setIsAvailable(false);
+    return;
+  }
+  let cancelled = false;
+  let subscription: { remove: () => void } | null = null;
+
+  Accelerometer.isAvailableAsync().then((available) => {
+    if (cancelled || !available) return;
+    Accelerometer.setUpdateInterval(100); // 100 ms: balance optimo bateria/gesto
+
+    subscription = Accelerometer.addListener(({ x, y, z }) => {
+      const magnitude = Math.sqrt(x * x + y * y + z * z);
+      const now = Date.now();
+      // Filtro con cooldown de 1000 ms para evento unico
+      if (magnitude > threshold && now - lastShakeTime.current > cooldownMs) {
+        lastShakeTime.current = now;
+        callbackRef.current();
+      }
+    });
+  });
+  return () => {
+    cancelled = true;
+    subscription?.remove();
+  };
+}, [threshold, cooldownMs]);
 ```
 
 ---
 
-### 2.2 Ciclo de Permisos y Degradación de GPS (`hooks/useGeoLocation.ts`)
+### 2.2 Ciclo de Permisos y Degradacion de GPS (`hooks/useGeoLocation.ts`)
 
 > [!IMPORTANT]
-> **Regla de UX de Autorización:** Nunca se deben pedir permisos en el evento de montaje de la pantalla. En iOS, si el usuario deniega el permiso una sola vez, la app queda permanentemente bloqueada. La consulta inicial debe ser puramente pasiva mediante `getForegroundPermissionsAsync()`.
+> **Regla de UX de Autorizacion:** Nunca se deben pedir permisos en el evento de montaje de la pantalla. En iOS, si el usuario deniega el permiso una sola vez, la app queda permanentemente bloqueada. La consulta inicial debe ser puramente pasiva mediante `getForegroundPermissionsAsync()`.
 
-#### Comparativa de Código (Diff Técnico):
+#### Codigo Inicial Propuesto por la IA:
 
-```diff
-- // Mala práctica propuesta por la IA (Pedir permiso al arrancar)
-- useEffect(() => {
--   Location.requestForegroundPermissionsAsync().then((res) => {
--     setPermission(res.granted ? 'granted' : 'denied');
--   });
-- }, []);
+```typescript
+// Mala practica propuesta por la IA (Pedir permiso al arrancar)
+useEffect(() => {
+  Location.requestForegroundPermissionsAsync().then((res) => {
+    setPermission(res.granted ? 'granted' : 'denied');
+  });
+}, []);
+```
 
-+ // Solución implementada (Consulta pasiva + solicitud en contexto)
-+ useEffect(() => {
-+   let cancelled = false;
-+   // Solo consulta el estado actual sin mostrar diálogo invasivo
-+   Location.getForegroundPermissionsAsync()
-+     .then((res) => {
-+       if (!cancelled) setState((s) => ({ ...s, permission: mapPermission(res) }));
-+     })
-+     .catch(() => {
-+       if (!cancelled) setState((s) => ({ ...s, permission: 'denied' }));
-+     });
-+   return () => { cancelled = true; };
-+ }, []);
-+
-+ // La solicitud real solo se ejecuta cuando el usuario pulsa el botón
-+ const requestPermission = useCallback(async (): Promise<boolean> => {
-+   const res = await Location.requestForegroundPermissionsAsync();
-+   setState((s) => ({ ...s, permission: mapPermission(res) }));
-+   return res.granted;
-+ }, []);
+#### Codigo Final Modificado y Corregido:
+
+```typescript
+// Solucion implementada (Consulta pasiva + solicitud en contexto)
+useEffect(() => {
+  let cancelled = false;
+  // Solo consulta el estado actual sin mostrar dialogo invasivo
+  Location.getForegroundPermissionsAsync()
+    .then((res) => {
+      if (!cancelled) setState((s) => ({ ...s, permission: mapPermission(res) }));
+    })
+    .catch(() => {
+      if (!cancelled) setState((s) => ({ ...s, permission: 'denied' }));
+    });
+  return () => {
+    cancelled = true;
+  };
+}, []);
+
+// La solicitud real solo se ejecuta cuando el usuario pulsa el boton
+const requestPermission = useCallback(async (): Promise<boolean> => {
+  const res = await Location.requestForegroundPermissionsAsync();
+  setState((s) => ({ ...s, permission: mapPermission(res) }));
+  return res.granted;
+}, []);
 ```
 
 ---
