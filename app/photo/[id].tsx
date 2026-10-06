@@ -1,5 +1,5 @@
 // app/photo/[id].tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,7 +23,7 @@ export default function PhotoDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { setNote, setFavorite, setAlbum, removePhoto, refresh } = useGeoPhotos();
+  const { setNote, setFavorite, setAlbum, removePhoto, refresh, addAlbum, albums: contextAlbums } = useGeoPhotos();
 
   const [photo, setPhoto] = useState<(GeoPhoto & { albumName?: string | null }) | null>(null);
   const [albums, setAlbums] = useState<AlbumItem[]>([]);
@@ -31,6 +32,15 @@ export default function PhotoDetailScreen() {
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newAlbumName, setNewAlbumName] = useState('');
+
+  const displayAlbums = useMemo(() => {
+    const map = new Map<number, AlbumItem>();
+    albums.forEach((a) => map.set(a.id, a));
+    contextAlbums.forEach((a) => map.set(a.id, a));
+    return Array.from(map.values());
+  }, [albums, contextAlbums]);
 
   useEffect(() => {
     async function loadData() {
@@ -85,16 +95,43 @@ export default function PhotoDetailScreen() {
     await refresh();
   };
 
-  // Guardar Foto y volver a la ventana de inicio
+  // Crear nuevo álbum y asignarlo inmediatamente
+  const handleCreateAlbum = async () => {
+    if (!newAlbumName.trim()) {
+      Alert.alert('Atención', 'El nombre del álbum no puede estar vacío.');
+      return;
+    }
+    try {
+      const created = await addAlbum(newAlbumName.trim());
+      setAlbums((prev) => {
+        if (prev.some((a) => a.id === created.id)) return prev;
+        return [...prev, created];
+      });
+      setSelectedAlbumId(created.id);
+      if (photo) {
+        await setAlbum(photo.id, created.id);
+      }
+      setNewAlbumName('');
+      setIsModalOpen(false);
+      Alert.alert('Álbum Asignado', `Foto asignada al nuevo álbum "${created.name}".`);
+    } catch {
+      Alert.alert('Error', 'Ya existe un álbum con ese nombre o hubo un error.');
+    }
+  };
+
+  // Guardar Foto (nota + álbum) y volver a la ventana de inicio
   const handleSaveNote = async () => {
     if (!photo) return;
     setSaving(true);
     try {
-      await setNote(photo.id, noteText.trim().length > 0 ? noteText.trim() : null);
+      await Promise.all([
+        setNote(photo.id, noteText.trim().length > 0 ? noteText.trim() : null),
+        setAlbum(photo.id, selectedAlbumId),
+      ]);
       await refresh();
       Alert.alert(
         'Éxito',
-        'La foto se guardó exitosamente.',
+        'La foto se guardó exitosamente con su álbum.',
         [
           {
             text: 'Aceptar',
@@ -115,11 +152,8 @@ export default function PhotoDetailScreen() {
   };
 
   // Cambiar Álbum
-  const handleSelectAlbum = async (albumId: number | null) => {
-    if (!photo) return;
+  const handleSelectAlbum = (albumId: number | null) => {
     setSelectedAlbumId(albumId);
-    await setAlbum(photo.id, albumId);
-    await refresh();
   };
 
   // Eliminar con confirmación
@@ -207,18 +241,21 @@ export default function PhotoDetailScreen() {
           multiline
           numberOfLines={3}
         />
-        <Pressable
-          onPress={handleSaveNote}
-          disabled={saving}
-          style={({ pressed }) => [styles.saveBtn, pressed && styles.btnPressed]}
-        >
-          <Text style={styles.saveBtnText}>{saving ? 'Guardando...' : 'Guardar Foto'}</Text>
-        </Pressable>
       </View>
 
-      {/* Sección Mover de Álbum */}
+      {/* Sección Asignar a un Álbum */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Álbum asignado:</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Álbum asignado:</Text>
+          <Pressable
+            onPress={() => setIsModalOpen(true)}
+            style={styles.createAlbumBtn}
+          >
+            <Ionicons name="add-circle-outline" size={18} color="#10b981" />
+            <Text style={styles.createAlbumBtnText}>Nuevo Álbum</Text>
+          </Pressable>
+        </View>
+
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.albumScroll}>
           <Pressable
             onPress={() => handleSelectAlbum(null)}
@@ -233,12 +270,19 @@ export default function PhotoDetailScreen() {
               Sin Álbum
             </Text>
           </Pressable>
-          {albums.map((alb) => (
+
+          {displayAlbums.map((alb) => (
             <Pressable
               key={alb.id}
               onPress={() => handleSelectAlbum(alb.id)}
               style={[styles.albumChip, selectedAlbumId === alb.id && styles.albumChipActive]}
             >
+              <Ionicons
+                name="folder"
+                size={14}
+                color={selectedAlbumId === alb.id ? '#0a0a0a' : '#10b981'}
+                style={{ marginRight: 6 }}
+              />
               <Text
                 style={[
                   styles.albumChipText,
@@ -252,6 +296,16 @@ export default function PhotoDetailScreen() {
         </ScrollView>
       </View>
 
+      {/* Botón Guardar Foto y volver al inicio */}
+      <Pressable
+        onPress={handleSaveNote}
+        disabled={saving}
+        style={({ pressed }) => [styles.saveBtn, pressed && styles.btnPressed]}
+      >
+        <Ionicons name="checkmark-circle-outline" size={20} color="#0a0a0a" style={{ marginRight: 8 }} />
+        <Text style={styles.saveBtnText}>{saving ? 'Guardando...' : 'Guardar Foto y Álbum'}</Text>
+      </Pressable>
+
       {/* Botón Eliminar con confirmación */}
       <Pressable
         onPress={handleDelete}
@@ -260,6 +314,45 @@ export default function PhotoDetailScreen() {
         <Ionicons name="trash" size={20} color="#ef4444" />
         <Text style={styles.deleteBtnText}>Eliminar Foto Permanentemente</Text>
       </Pressable>
+
+      {/* Modal para crear nuevo álbum */}
+      <Modal
+        visible={isModalOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setIsModalOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Crear Nuevo Álbum</Text>
+            <Text style={styles.modalSubtitle}>
+              Ingresa el nombre del álbum para asignarlo a esta foto:
+            </Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Ej: Paisajes, Trabajo, etc."
+              placeholderTextColor="#737373"
+              value={newAlbumName}
+              onChangeText={setNewAlbumName}
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <Pressable
+                onPress={() => {
+                  setNewAlbumName('');
+                  setIsModalOpen(false);
+                }}
+                style={styles.modalBtnCancel}
+              >
+                <Text style={styles.modalBtnTextCancel}>Cancelar</Text>
+              </Pressable>
+              <Pressable onPress={handleCreateAlbum} style={styles.modalBtnConfirm}>
+                <Text style={styles.modalBtnTextConfirm}>Crear y Asignar</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -317,15 +410,39 @@ const styles = StyleSheet.create({
   saveBtn: {
     backgroundColor: '#10b981',
     borderRadius: 10,
-    paddingVertical: 12,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
   },
   saveBtnText: { color: '#0a0a0a', fontWeight: 'bold', fontSize: 15 },
   btnPressed: { opacity: 0.8 },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  createAlbumBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#17252a',
+    gap: 4,
+  },
+  createAlbumBtnText: {
+    color: '#10b981',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
   albumScroll: { flexDirection: 'row', marginTop: 4 },
   albumChip: {
     backgroundColor: '#262626',
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
@@ -357,5 +474,68 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   backBtnText: { color: '#000000', fontWeight: 'bold' },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#171717',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginBottom: 6,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: '#a3a3a3',
+    marginBottom: 16,
+  },
+  modalInput: {
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: '#333333',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#ffffff',
+    fontSize: 15,
+    marginBottom: 20,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  modalBtnCancel: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#262626',
+  },
+  modalBtnConfirm: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#10b981',
+  },
+  modalBtnTextCancel: {
+    color: '#ffffff',
+    fontWeight: 'bold',
+  },
+  modalBtnTextConfirm: {
+    color: '#000000',
+    fontWeight: 'bold',
+  },
 });
 
