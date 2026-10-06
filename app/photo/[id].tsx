@@ -137,7 +137,7 @@ export default function PhotoDetailScreen() {
           {
             text: 'Aceptar',
             onPress: () => {
-              router.replace('/(tabs)/geocam');
+              router.replace('/(tabs)/inicio');
             },
           },
         ],

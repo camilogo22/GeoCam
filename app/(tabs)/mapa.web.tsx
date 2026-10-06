@@ -1,15 +1,23 @@
 // app/(tabs)/mapa.web.tsx
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Image, FlatList, ScrollView, Pressable } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, Image, FlatList, ScrollView, Pressable, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useGeoPhotos } from '@/context/GeoPhotosContext';
 import { useGeoLocation } from '@/hooks/useGeoLocation';
 import type { GeoPhoto } from '@/types/geo';
 
 export default function MapaWebScreen() {
   const router = useRouter();
-  const { photos } = useGeoPhotos();
+  const { photos, albums } = useGeoPhotos();
   const { coords: currentCoords } = useGeoLocation({ watch: false });
+  const [searchText, setSearchText] = useState('');
+
+  const albumMap = useMemo(() => {
+    const map = new Map<number, string>();
+    albums.forEach((a) => map.set(a.id, a.name));
+    return map;
+  }, [albums]);
 
   const mappedPhotos = useMemo(
     () =>
@@ -20,9 +28,36 @@ export default function MapaWebScreen() {
     [photos]
   );
 
+  const filteredMappedPhotos = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    if (!query) return mappedPhotos;
+    return mappedPhotos.filter((p) => {
+      const note = (p.note ?? '').toLowerCase();
+      const albumName = (p.albumId ? albumMap.get(p.albumId) ?? '' : '').toLowerCase();
+      const source = p.source === 'camera' ? 'cámara camara camera' : 'galería galeria gallery';
+      const date = new Date(p.createdAt).toLocaleDateString().toLowerCase();
+
+      return (
+        note.includes(query) ||
+        albumName.includes(query) ||
+        source.includes(query) ||
+        date.includes(query)
+      );
+    });
+  }, [mappedPhotos, searchText, albumMap]);
+
   const unmappedPhotos = useMemo(
-    () => photos.filter((p) => p.coords === null),
-    [photos]
+    () => {
+      const unmapped = photos.filter((p) => p.coords === null);
+      const query = searchText.trim().toLowerCase();
+      if (!query) return unmapped;
+      return unmapped.filter((p) => {
+        const note = (p.note ?? '').toLowerCase();
+        const albumName = (p.albumId ? albumMap.get(p.albumId) ?? '' : '').toLowerCase();
+        return note.includes(query) || albumName.includes(query);
+      });
+    },
+    [photos, searchText, albumMap]
   );
 
   return (
@@ -32,6 +67,23 @@ export default function MapaWebScreen() {
         <Text style={styles.subtitle}>
           react-native-maps utiliza módulos nativos de iOS y Android. En el navegador web se muestra el registro georreferenciado de fotos.
         </Text>
+      </View>
+
+      {/* Buscador de fotos en el mapa */}
+      <View style={styles.searchBar}>
+        <Ionicons name="search" size={20} color="#10b981" style={{ marginRight: 8 }} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar fotos en el mapa por nota, álbum..."
+          placeholderTextColor="#737373"
+          value={searchText}
+          onChangeText={setSearchText}
+        />
+        {searchText.length > 0 && (
+          <Pressable onPress={() => setSearchText('')} hitSlop={8}>
+            <Ionicons name="close-circle" size={20} color="#a3a3a3" />
+          </Pressable>
+        )}
       </View>
 
       {currentCoords && (
@@ -46,17 +98,19 @@ export default function MapaWebScreen() {
       {/* Fotos geolocalizadas */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>
-          Fotos con Marcador GPS ({mappedPhotos.length})
+          Fotos con Marcador GPS ({filteredMappedPhotos.length})
         </Text>
-        {mappedPhotos.length === 0 ? (
+        {filteredMappedPhotos.length === 0 ? (
           <View style={styles.emptyCard}>
             <Text style={styles.emptyText}>
-              Aún no hay fotos con coordenadas. Toma una foto con GPS activado desde GeoCam o pruébala en tu teléfono físico.
+              {searchText.trim().length > 0
+                ? 'No se encontraron fotos con coordenadas para esa búsqueda.'
+                : 'Aún no hay fotos con coordenadas. Toma una foto con GPS activado desde GeoCam o pruébala en tu teléfono físico.'}
             </Text>
           </View>
         ) : (
           <View style={styles.grid}>
-            {mappedPhotos.map((photo) => (
+            {filteredMappedPhotos.map((photo) => (
               <Pressable
                 key={photo.id}
                 onPress={() => router.push(`/photo/${photo.id}`)}
@@ -67,6 +121,14 @@ export default function MapaWebScreen() {
                   <Text style={styles.photoSource}>
                     {photo.source === 'camera' ? 'Cámara' : 'Galería'}
                   </Text>
+                  {photo.albumId && albumMap.has(photo.albumId) && (
+                    <Text style={styles.photoAlbum}>📁 {albumMap.get(photo.albumId)}</Text>
+                  )}
+                  {photo.note && (
+                    <Text style={styles.photoNote} numberOfLines={1}>
+                      {photo.note}
+                    </Text>
+                  )}
                   <Text style={styles.photoCoords}>
                     {photo.coords.latitude.toFixed(5)}, {photo.coords.longitude.toFixed(5)}
                   </Text>
@@ -140,6 +202,22 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 20,
   },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#171717',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 46,
+    borderWidth: 1,
+    borderColor: '#333333',
+    marginBottom: 20,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#ffffff',
+    fontSize: 14,
+  },
   coordsCard: {
     backgroundColor: '#171717',
     padding: 16,
@@ -149,15 +227,15 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   coordsCardTitle: {
-    color: '#10b981',
+    fontSize: 14,
     fontWeight: 'bold',
-    fontSize: 13,
+    color: '#10b981',
+    marginBottom: 4,
   },
   coordsCardValue: {
+    fontSize: 13,
     color: '#ffffff',
-    fontSize: 15,
     fontFamily: 'monospace',
-    marginTop: 4,
   },
   section: {
     marginBottom: 28,
@@ -174,12 +252,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#262626',
-    alignItems: 'center',
   },
   emptyText: {
-    color: '#737373',
+    color: '#a3a3a3',
     fontSize: 14,
-    textAlign: 'center',
+    lineHeight: 20,
   },
   grid: {
     flexDirection: 'row',
@@ -189,62 +266,74 @@ const styles = StyleSheet.create({
   photoCard: {
     backgroundColor: '#171717',
     borderRadius: 12,
+    overflow: 'hidden',
+    width: 240,
     borderWidth: 1,
     borderColor: '#262626',
-    overflow: 'hidden',
-    width: 220,
   },
   photoImage: {
     width: '100%',
-    height: 140,
+    height: 160,
     backgroundColor: '#262626',
   },
   photoInfo: {
     padding: 12,
   },
   photoSource: {
-    color: '#ffffff',
+    color: '#10b981',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  photoAlbum: {
+    color: '#38bdf8',
+    fontSize: 11,
     fontWeight: '600',
-    fontSize: 13,
+    marginBottom: 4,
+  },
+  photoNote: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '500',
+    marginBottom: 4,
   },
   photoCoords: {
-    color: '#10b981',
-    fontFamily: 'monospace',
+    color: '#a3a3a3',
     fontSize: 11,
-    marginTop: 4,
+    fontFamily: 'monospace',
+    marginBottom: 2,
   },
   photoTime: {
     color: '#737373',
     fontSize: 11,
-    marginTop: 2,
   },
   clickNote: {
     color: '#10b981',
-    fontSize: 10,
-    marginTop: 4,
+    fontSize: 11,
+    marginTop: 6,
     fontWeight: 'bold',
   },
   unmappedCard: {
-    marginRight: 12,
+    marginRight: 10,
     position: 'relative',
   },
   unmappedThumb: {
-    width: 70,
-    height: 70,
+    width: 60,
+    height: 60,
     borderRadius: 8,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: '#404040',
   },
   unmappedBadge: {
     position: 'absolute',
-    bottom: 4,
-    right: 4,
-    backgroundColor: '#171717',
-    borderRadius: 6,
+    bottom: 2,
+    right: 2,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 4,
     paddingHorizontal: 4,
   },
   unmappedBadgeText: {
+    color: '#ffffff',
     fontSize: 10,
-    color: '#d4d4d4',
   },
 });
