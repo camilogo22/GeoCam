@@ -36,3 +36,4 @@ export type Album = typeof albums.$inferSelect;
 export type NewAlbum = typeof albums.$inferInsert;
 export type PhotoRecord = typeof photos.$inferSelect;
 export type NewPhotoRecord = typeof photos.$inferInsert;
+

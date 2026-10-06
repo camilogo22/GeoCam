@@ -13,11 +13,13 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getPhotoById, getAlbums } from '@/services/photosRepository';
 import { useGeoPhotos } from '@/context/GeoPhotosContext';
 import type { GeoPhoto, AlbumItem } from '@/types/geo';
 
 export default function PhotoDetailScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { setNote, setFavorite, setAlbum, removePhoto, refresh } = useGeoPhotos();
@@ -76,16 +78,20 @@ export default function PhotoDetailScreen() {
 
   // Toggle Favorito
   const handleToggleFavorite = async () => {
+    if (!photo) return;
     const nextVal = !isFavorite;
     setIsFavorite(nextVal);
     await setFavorite(photo.id, nextVal);
+    await refresh();
   };
 
   // Guardar Nota
   const handleSaveNote = async () => {
+    if (!photo) return;
     setSaving(true);
     try {
       await setNote(photo.id, noteText.trim().length > 0 ? noteText.trim() : null);
+      await refresh();
       Alert.alert('Éxito', 'Nota guardada correctamente.');
     } catch {
       Alert.alert('Error', 'No se pudo guardar la nota.');
@@ -96,8 +102,10 @@ export default function PhotoDetailScreen() {
 
   // Cambiar Álbum
   const handleSelectAlbum = async (albumId: number | null) => {
+    if (!photo) return;
     setSelectedAlbumId(albumId);
     await setAlbum(photo.id, albumId);
+    await refresh();
   };
 
   // Eliminar con confirmación
@@ -125,7 +133,16 @@ export default function PhotoDetailScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[
+        styles.content,
+        {
+          paddingTop: Math.max(insets.top, 16),
+          paddingBottom: Math.max(insets.bottom, 24) + 20,
+        },
+      ]}
+    >
       {/* Header con botón regresar */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn}>
@@ -235,7 +252,7 @@ export default function PhotoDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  content: { padding: 16, paddingBottom: 40 },
+  content: { paddingHorizontal: 16 },
   centerContainer: {
     flex: 1,
     backgroundColor: '#0a0a0a',
@@ -247,7 +264,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 40,
+    paddingTop: 4,
     paddingBottom: 16,
   },
   headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#ffffff' },
@@ -327,3 +344,4 @@ const styles = StyleSheet.create({
   },
   backBtnText: { color: '#000000', fontWeight: 'bold' },
 });
+

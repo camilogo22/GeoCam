@@ -96,3 +96,4 @@ export function usePhotos(filters: PhotoFilterOptions = {}) {
     setAlbum,
   };
 }
+

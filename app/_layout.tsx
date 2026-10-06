@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
 import migrations from '@/drizzle/migrations';
 import { db } from '@/db/client';
+import { GeoPhotosProvider } from '@/context/GeoPhotosContext';
 
 export default function RootLayout() {
   const isWeb = Platform.OS === 'web';
@@ -47,12 +48,12 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <GeoPhotosProvider>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="photo/[id]" options={{ presentation: 'card' }} />
       </Stack>
-    </>
+    </GeoPhotosProvider>
   );
 }

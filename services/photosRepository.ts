@@ -225,3 +225,4 @@ export async function createAlbum(name: string): Promise<AlbumItem> {
 export async function deleteAlbum(id: number): Promise<void> {
   await db.delete(albums).where(eq(albums.id, id));
 }
+

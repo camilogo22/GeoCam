@@ -2,12 +2,10 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { GeoPhotosProvider } from '@/context/GeoPhotosContext';
-
+ 
 export default function TabsLayout() {
   return (
-    <GeoPhotosProvider>
-      <Tabs
+    <Tabs
         screenOptions={{
           headerShown: false,
           tabBarStyle: {
@@ -49,6 +47,5 @@ export default function TabsLayout() {
           }}
         />
       </Tabs>
-    </GeoPhotosProvider>
   );
 }

@@ -10,3 +10,4 @@ export const expoDb = openDatabaseSync('geocam.db', { enableChangeListener: true
 expoDb.execSync('PRAGMA foreign_keys = ON;');
 
 export const db = drizzle(expoDb, { schema });
+

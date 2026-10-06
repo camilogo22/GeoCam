@@ -50,3 +50,4 @@ export function deletePhotoFile(uri: string): void {
     console.warn('Error al eliminar archivo físico de foto:', e);
   }
 }
+

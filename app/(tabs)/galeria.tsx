@@ -357,3 +357,4 @@ const styles = StyleSheet.create({
   modalBtnTextCancel: { color: '#ffffff', fontWeight: 'bold' },
   modalBtnTextConfirm: { color: '#000000', fontWeight: 'bold' },
 });
+
