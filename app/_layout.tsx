@@ -51,6 +51,7 @@ export default function RootLayout() {
     <GeoPhotosProvider>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="photo/[id]" options={{ presentation: 'card' }} />
       </Stack>
