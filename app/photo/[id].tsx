@@ -119,7 +119,7 @@ export default function PhotoDetailScreen() {
     }
   };
 
-  // Guardar Foto (nota + álbum) y volver a la ventana de inicio
+  // Guardar Foto (nota + álbum + favorito) y volver a la ventana de inicio
   const handleSaveNote = async () => {
     if (!photo) return;
     setSaving(true);
@@ -127,11 +127,12 @@ export default function PhotoDetailScreen() {
       await Promise.all([
         setNote(photo.id, noteText.trim().length > 0 ? noteText.trim() : null),
         setAlbum(photo.id, selectedAlbumId),
+        setFavorite(photo.id, isFavorite),
       ]);
       await refresh();
       Alert.alert(
         'Éxito',
-        'La foto se guardó exitosamente con su álbum.',
+        'La foto se guardó exitosamente con sus cambios.',
         [
           {
             text: 'Aceptar',
@@ -228,6 +229,24 @@ export default function PhotoDetailScreen() {
             : 'Sin coordenadas (Ubicación denegada)'}
         </Text>
       </View>
+
+      {/* Botón de Favorito destacado */}
+      <Pressable
+        onPress={handleToggleFavorite}
+        style={[
+          styles.favoriteCard,
+          isFavorite && styles.favoriteCardActive,
+        ]}
+      >
+        <Ionicons
+          name={isFavorite ? 'heart' : 'heart-outline'}
+          size={22}
+          color={isFavorite ? '#ef4444' : '#a3a3a3'}
+        />
+        <Text style={[styles.favoriteCardText, isFavorite && styles.favoriteCardTextActive]}>
+          {isFavorite ? 'Foto Marcada como Favorita' : 'Agregar a Favoritos'}
+        </Text>
+      </Pressable>
 
       {/* Sección Editar Nota */}
       <View style={styles.section}>
@@ -394,6 +413,30 @@ const styles = StyleSheet.create({
   },
   metaRow: { color: '#d4d4d4', fontSize: 14 },
   metaLabel: { color: '#10b981', fontWeight: 'bold' },
+  favoriteCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#171717',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#262626',
+    gap: 10,
+  },
+  favoriteCardActive: {
+    backgroundColor: '#261215',
+    borderColor: '#ef4444',
+  },
+  favoriteCardText: {
+    color: '#a3a3a3',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  favoriteCardTextActive: {
+    color: '#ef4444',
+  },
   section: { marginBottom: 20 },
   sectionTitle: { color: '#ffffff', fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
   input: {

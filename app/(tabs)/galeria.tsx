@@ -18,7 +18,7 @@ import type { GeoPhoto } from '@/types/geo';
 
 export default function GaleriaScreen() {
   const router = useRouter();
-  const { photos, albums, addAlbum, removeAlbum } = useGeoPhotos();
+  const { photos, albums, addAlbum, removeAlbum, setFavorite, removePhoto } = useGeoPhotos();
 
   // Estados de filtros (C4)
   const [searchText, setSearchText] = useState('');
@@ -29,14 +29,31 @@ export default function GaleriaScreen() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState('');
 
-  // Filtrado reactivo en memoria / consulta sincronizada (C4)
+  // Mapa de nombres de álbumes para búsqueda rápida y etiquetas
+  const albumMap = useMemo(() => {
+    const map = new Map<number, string>();
+    albums.forEach((a) => map.set(a.id, a.name));
+    return map;
+  }, [albums]);
+
+  // Filtrado reactivo: busca por nota descriptiva, nombre del álbum, origen o fecha
   const filteredPhotos = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
     return photos.filter((p) => {
-      // Filtro de nota (búsqueda LIKE insensible a mayúsculas)
-      if (searchText.trim().length > 0) {
-        const query = searchText.trim().toLowerCase();
+      if (query.length > 0) {
         const note = (p.note ?? '').toLowerCase();
-        if (!note.includes(query)) return false;
+        const albumName = (p.albumId ? albumMap.get(p.albumId) ?? '' : '').toLowerCase();
+        const source = p.source === 'camera' ? 'cámara camara camera' : 'galería galeria gallery';
+        const date = new Date(p.createdAt).toLocaleDateString().toLowerCase();
+
+        const matchesNote = note.includes(query);
+        const matchesAlbum = albumName.includes(query);
+        const matchesSource = source.includes(query);
+        const matchesDate = date.includes(query);
+
+        if (!matchesNote && !matchesAlbum && !matchesSource && !matchesDate) {
+          return false;
+        }
       }
 
       // Filtro de favoritas
@@ -53,7 +70,7 @@ export default function GaleriaScreen() {
         return p.albumId === selectedAlbumId;
       }
     });
-  }, [photos, searchText, selectedAlbumId, onlyFavorites]);
+  }, [photos, searchText, selectedAlbumId, onlyFavorites, albumMap]);
 
   const handleCreateAlbum = async () => {
     if (!newAlbumName.trim()) {
@@ -87,29 +104,81 @@ export default function GaleriaScreen() {
     );
   };
 
-  const renderPhotoItem = ({ item }: { item: GeoPhoto }) => (
-    <Pressable
-      onPress={() => router.push(`/photo/${item.id}`)}
-      style={({ pressed }) => [styles.photoCard, pressed && styles.cardPressed]}
-    >
-      <Image source={{ uri: item.uri }} style={styles.photoThumb} />
-      {item.favorite && (
-        <View style={styles.favoriteBadge}>
-          <Ionicons name="heart" size={14} color="#ef4444" />
+  // Eliminar individualmente la foto seleccionada
+  const handleConfirmDeletePhoto = (photoId: string) => {
+    Alert.alert(
+      '¿Eliminar foto?',
+      '¿Deseas eliminar permanentemente esta foto seleccionada?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            await removePhoto(photoId);
+          },
+        },
+      ]
+    );
+  };
+
+  const renderPhotoItem = ({ item }: { item: GeoPhoto }) => {
+    const albumName = item.albumId ? albumMap.get(item.albumId) : null;
+    return (
+      <Pressable
+        onPress={() => router.push(`/photo/${item.id}`)}
+        style={({ pressed }) => [styles.photoCard, pressed && styles.cardPressed]}
+      >
+        <View style={styles.thumbWrapper}>
+          <Image source={{ uri: item.uri }} style={styles.photoThumb} />
+
+          {/* Botón interactivo para alternar Favoritos */}
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation?.();
+              setFavorite(item.id, !item.favorite);
+            }}
+            style={styles.cardFavoriteBtn}
+            hitSlop={8}
+          >
+            <Ionicons
+              name={item.favorite ? 'heart' : 'heart-outline'}
+              size={18}
+              color={item.favorite ? '#ef4444' : '#ffffff'}
+            />
+          </Pressable>
+
+          {/* Botón interactivo para eliminar la foto seleccionada */}
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation?.();
+              handleConfirmDeletePhoto(item.id);
+            }}
+            style={styles.cardDeleteBtn}
+            hitSlop={8}
+          >
+            <Ionicons name="trash" size={14} color="#ef4444" />
+          </Pressable>
         </View>
-      )}
-      <View style={styles.photoInfo}>
-        <Text style={styles.photoDate}>
-          {new Date(item.createdAt).toLocaleDateString()}
-        </Text>
-        {item.note && (
-          <Text style={styles.photoNote} numberOfLines={1}>
-            {item.note}
+
+        <View style={styles.photoInfo}>
+          <Text style={styles.photoDate}>
+            {new Date(item.createdAt).toLocaleDateString()}
           </Text>
-        )}
-      </View>
-    </Pressable>
-  );
+          {albumName && (
+            <Text style={styles.photoAlbumTag} numberOfLines={1}>
+              {albumName}
+            </Text>
+          )}
+          {item.note && (
+            <Text style={styles.photoNote} numberOfLines={1}>
+              {item.note}
+            </Text>
+          )}
+        </View>
+      </Pressable>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -120,7 +189,7 @@ export default function GaleriaScreen() {
           <Ionicons name="search" size={18} color="#a3a3a3" style={{ marginRight: 8 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar por nota descriptiva..."
+            placeholder="Buscar por nota, álbum o fecha..."
             placeholderTextColor="#737373"
             value={searchText}
             onChangeText={setSearchText}
@@ -305,17 +374,27 @@ const styles = StyleSheet.create({
     borderColor: '#262626',
   },
   cardPressed: { opacity: 0.8 },
-  photoThumb: { width: '100%', height: 140, backgroundColor: '#262626' },
-  favoriteBadge: {
+  thumbWrapper: { position: 'relative', width: '100%', height: 140 },
+  photoThumb: { width: '100%', height: '100%', backgroundColor: '#262626' },
+  cardFavoriteBtn: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderRadius: 14,
+    padding: 6,
+  },
+  cardDeleteBtn: {
     position: 'absolute',
     top: 6,
     right: 6,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderRadius: 12,
-    padding: 4,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    borderRadius: 14,
+    padding: 6,
   },
   photoInfo: { padding: 8 },
   photoDate: { color: '#a3a3a3', fontSize: 11 },
+  photoAlbumTag: { color: '#10b981', fontSize: 11, fontWeight: 'bold', marginTop: 2 },
   photoNote: { color: '#ffffff', fontSize: 12, marginTop: 2, fontWeight: '500' },
   emptyContainer: {
     flex: 1,

@@ -15,28 +15,8 @@ export default function GeoCamScreen() {
   const router = useRouter();
   const cam = useCamera();
   const geo = useGeoLocation({ watch: true });
-  const { photos, addPhoto, clearAll } = useGeoPhotos();
+  const { photos, addPhoto } = useGeoPhotos();
   const [lastPhoto, setLastPhoto] = useState<GeoPhoto | null>(photos[0] ?? null);
-
-  // R4: Sensor de sacudida para borrar todas las fotos
-  useShake(() => {
-    if (photos.length === 0) return;
-    Alert.alert(
-      '¿Borrar todas las fotos?',
-      'Has agitado el teléfono. ¿Deseas eliminar todas las fotos registradas?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Borrar todo',
-          style: 'destructive',
-          onPress: () => {
-            clearAll();
-            setLastPhoto(null);
-          },
-        },
-      ]
-    );
-  });
 
   // Si aún está consultando permisos iniciales
   if (cam.permissionState === 'checking') {
@@ -75,9 +55,9 @@ export default function GeoCamScreen() {
       createdAt: Date.now(),
     };
 
-    // R1: Guardar en estado global
-    addPhoto(newPhoto);
-    setLastPhoto(newPhoto);
+    // R1: Guardar en estado global y SQLite
+    const saved = await addPhoto(newPhoto);
+    setLastPhoto(saved);
   };
 
   // R2: Importar imagen desde la galería
@@ -101,8 +81,8 @@ export default function GeoCamScreen() {
         createdAt: Date.now(),
       };
 
-      addPhoto(newPhoto);
-      setLastPhoto(newPhoto);
+      const saved = await addPhoto(newPhoto);
+      setLastPhoto(saved);
     }
   };
 
