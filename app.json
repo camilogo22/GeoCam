@@ -36,7 +36,8 @@
           "photosPermission": "GeoCam accede a tu galería para importar fotos."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-sqlite"
     ]
   }
 }

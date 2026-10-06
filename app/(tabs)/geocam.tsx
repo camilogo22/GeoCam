@@ -1,6 +1,7 @@
 // app/(tabs)/geocam.tsx
 import React, { useState } from 'react';
 import { View, Text, Pressable, Image, StyleSheet, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 import { CameraView } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useCamera } from '@/hooks/useCamera';
@@ -11,6 +12,7 @@ import { PermissionPrimer } from '@/components/PermissionPrimer';
 import type { GeoPhoto } from '@/types/geo';
 
 export default function GeoCamScreen() {
+  const router = useRouter();
   const cam = useCamera();
   const geo = useGeoLocation({ watch: true });
   const { photos, addPhoto, clearAll } = useGeoPhotos();
@@ -143,7 +145,17 @@ export default function GeoCamScreen() {
       {/* Controles inferiores */}
       <View style={styles.bottomBar}>
         {/* Botón de galería / última foto con distintivo de origen */}
-        <Pressable onPress={handlePickFromGallery} style={styles.thumbnailBtn}>
+        <Pressable
+          onPress={() => {
+            if (lastPhoto) {
+              router.push(`/photo/${lastPhoto.id}`);
+            } else {
+              handlePickFromGallery();
+            }
+          }}
+          onLongPress={handlePickFromGallery}
+          style={styles.thumbnailBtn}
+        >
           {lastPhoto ? (
             <View>
               <Image source={{ uri: lastPhoto.uri }} style={styles.thumbnail} />

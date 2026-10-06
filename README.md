@@ -1,30 +1,59 @@
-# GeoCam — Modulos Nativos y Sensores del Dispositivo
+# GeoCam Persistente — Modulo CRUD con Drizzle ORM y SQLite
 
-Aplicacion movil desarrollada con **Expo**, **React Native** y **TypeScript** para el Taller Integrador de la Semana 6.
+Aplicacion movil desarrollada con **Expo**, **React Native**, **TypeScript**, **Drizzle ORM** y **Expo SQLite** para el Taller Integrador de la Semana 7.
 
 **Desarrollador:** Camilo Gomez  
-**Semana:** 6 — Modulos Nativos y Sensores del Dispositivo  
+**Semana:** 7 — Base de Datos Local Offline-First con Drizzle ORM y SQLite  
+**Repositorio:** [https://github.com/camilogo22/GeoCam](https://github.com/camilogo22/GeoCam)  
 
 ---
 
 ## Caracteristicas Principales
 
-- **Camara Nativa (`expo-camera`)**: Vista previa fluida con `CameraView`, alternancia de camara frontal/trasera y proteccion contra dobles toques simultaneos.
-- **Geolocalizacion Reactiva (`expo-location`)**: Maquina de estados completa de permisos (`checking`, `undetermined`, `granted`, `denied`, `blocked`), lectura puntual bajo demanda y seguimiento continuo con coordenadas en vivo.
-- **Degradacion Elegante**: Si el usuario rechaza la ubicacion, la camara sigue funcionando normalmente y las fotos se almacenan con `coords: null`.
-- **Selector de Galeria (`expo-image-picker`)**: Importacion de fotos de la galeria distinguidas visualmente con insignias de origen (camara vs galeria).
-- **Sensor de Movimiento (`expo-sensors`)**: Deteccion de agitacion del telefono (shake) mediante el acelerometro con umbral de fuerza, frecuencia de 100 ms y tiempo de enfriamiento (cooldown) para confirmar el borrado masivo de fotos.
-- **Mapa Interactivo (`react-native-maps`)**: Marcadores interactivos para fotos geolocalizadas con Callouts que muestran la miniatura, y panel inferior horizontal para fotos sin ubicacion.
-- **Estado Global Inmutable (`GeoPhotosContext`)**: Manejo centralizado y seguro de la coleccion de fotos en memoria.
+- **Base de Datos Embebida Offline-First**: Implementacion completa con `expo-sqlite` y `drizzle-orm/expo-sqlite`, ejecutando con `PRAGMA foreign_keys = ON;` y `enableChangeListener: true`.
+- **Relaciones y Llaves Foraneas (C1)**: Tabla `albums` relacionada con `photos` mediante la columna `albumId`. Regla `onDelete: 'set null'` para que al borrar un album sus fotos queden sin album pero no se eliminen.
+- **Historial de Migraciones Versionadas (C2)**:
+  - Migracion `0000_sturdy_omega_sentinel.sql`: Tablas iniciales `albums` y `photos`.
+  - Migracion `0001_flippant_retro_girl.sql`: Adicion incremental de columnas `note` (texto) y `favorite` (booleano) preservando los datos existentes.
+- **CRUD Completo de Fotos (C3)**: Pantalla dedicada `app/photo/[id].tsx` para ver metadatos y coordenadas, editar notas, alternar estado favorito, reasignar album y eliminar con confirmacion.
+- **Busqueda y Filtros Reactivos (C4)**: Pantalla `app/(tabs)/galeria.tsx` con buscador en vivo por nota (operador `like`), filtro por favoritas y selector de albumes.
+- **Persistencia Fisica en Documentos (C5)**: Modulo `services/photoFiles.ts` que copia fotos desde la cache temporal a la carpeta de documentos permanentes (`Paths.document`) y elimina el archivo fisico al borrar el registro de SQLite.
+- **Modulos Nativos y Sensores**: Camara nativa (`expo-camera`), mapa interactivo (`react-native-maps`), acelerometro (`expo-sensors`) y geolocalizacion (`expo-location`).
 
 ---
 
-## Captura de la Aplicacion en Dispositivo Fisico (iOS / Expo Go)
+## Diagrama de Tablas de la Base de Datos
+
+```text
++-----------------------------------+             +-----------------------------------+
+|              albums               |             |              photos               |
++-----------------------------------+             +-----------------------------------+
+| id: integer (PK, AutoIncrement)   |<------------| id: text (PK)                     |
+| name: text (Unique, Not Null)     |  1       0..*| uri: text (Not Null)             |
+| created_at: integer (Not Null)    |             | latitude: real                    |
++-----------------------------------+             | longitude: real                   |
+                                                  | accuracy: real                    |
+                                                  | source: text (camera/gallery)     |
+                                                  | created_at: integer (Not Null)    |
+                                                  | album_id: integer (FK, Set Null)  |
+                                                  | note: text (Nullable)             |
+                                                  | favorite: integer (Boolean, 0)    |
+                                                  +-----------------------------------+
+```
+
+### Relacion:
+- Un album puede contener de 0 a muchas fotos (`1` a `0..*`).
+- Una foto pertenece opcionalmente a un album (`album_id` nullable).
+- Regla referencial: `ON DELETE SET NULL`. Al eliminar un registro en `albums`, las fotos asociadas actualizan su campo `album_id` a `NULL` sin borrarse.
+
+---
+
+## Captura de Ejecucion en Dispositivo Fisico
 
 <p align="center">
-  <img src="screenshots/mapa_ubicacion.jpg" alt="Mapa GeoCam en Dispositivo Fisico" width="300" />
+  <img src="screenshots/mapa_ubicacion.jpg" alt="GeoCam en Dispositivo Fisico" width="300" />
 </p>
-<p align="center"><em>Pestaña Mapa ejecutandose en telefono fisico con deteccion GPS y centrado de ubicacion en tiempo real (Riohacha, Colombia).</em></p>
+<p align="center"><em>Ejecucion de GeoCam en iPhone (iOS) con Expo Go, validando deteccion GPS y mapa interactivo en Riohacha, Colombia.</em></p>
 
 ---
 
@@ -34,71 +63,52 @@ Aplicacion movil desarrollada con **Expo**, **React Native** y **TypeScript** pa
 semana-6/
 ├── app/
 │   ├── (tabs)/
-│   │   ├── _layout.tsx           # Configura las 2 pestañas y envuelve en GeoPhotosProvider
-│   │   ├── geocam.tsx            # Pestaña 1: Camara, coordenadas en vivo y disparo
-│   │   ├── mapa.tsx              # Pestaña 2: Mapa interactivo nativo (iOS/Android)
-│   │   └── mapa.web.tsx          # Pestaña 2: Vista adaptada para navegadores web
-│   ├── _layout.tsx               # Root Layout con Stack y StatusBar
+│   │   ├── _layout.tsx           # Pestañas: GeoCam, Galeria y Mapa
+│   │   ├── geocam.tsx            # Pestaña 1: Camara, coordenadas y captura persistente
+│   │   ├── galeria.tsx           # Pestaña 2: Busqueda por nota, filtros por album y favoritas
+│   │   ├── mapa.tsx              # Pestaña 3: Mapa interactivo con marcadores y enlace a detalle
+│   │   └── mapa.web.tsx          # Pestaña 3: Modo adaptado a navegador web
+│   ├── photo/
+│   │   └── [id].tsx              # Pantalla CRUD: Ver foto, editar nota, favorito, album y borrar
+│   ├── _layout.tsx               # Root Layout con ejecucion de useMigrations()
 │   └── index.tsx                 # Redireccion a /(tabs)/geocam
-├── components/
-│   └── PermissionPrimer.tsx      # Explicacion en contexto y boton "Abrir Ajustes"
-├── context/
-│   └── GeoPhotosContext.tsx      # Contexto inmutable para almacenar fotos
+├── db/
+│   ├── client.ts                 # Instancia de Drizzle ORM y activacion de PRAGMA foreign_keys
+│   └── schema.ts                 # Esquemas relacionales de albums y photos
+├── drizzle/                      # Carpeta versionada con migraciones SQL oficiales
+│   ├── meta/
+│   │   └── _journal.json         # Registro historico de migraciones
+│   ├── 0000_sturdy_omega_sentinel.sql  # Migracion inicial: albums y photos
+│   ├── 0001_flippant_retro_girl.sql    # Migracion 2: note y favorite
+│   └── migrations.js             # Indice de migraciones empaquetadas para Expo
+├── services/
+│   ├── photoFiles.ts             # Persistencia permanente en Paths.document y borrado fisico
+│   └── photosRepository.ts       # Consultas Drizzle, filtros LIKE y operaciones CRUD
 ├── hooks/
-│   ├── useCamera.ts              # Hook nativo para CameraView y permisos
-│   ├── useGeoLocation.ts         # Hook nativo para GPS y seguimiento
-│   └── useShake.ts               # Hook con acelerometro y umbral de agitacion
-├── screenshots/
-│   └── mapa_ubicacion.jpg        # Evidencia de ejecucion en dispositivo fisico
+│   ├── usePhotos.ts              # Hook reactivo de fotos con busqueda y filtros
+│   ├── useAlbums.ts              # Hook reactivo de albumes
+│   ├── useCamera.ts              # Hook nativo de camara
+│   ├── useGeoLocation.ts         # Hook nativo de GPS
+│   └── useShake.ts               # Hook con acelerometro
+├── context/
+│   └── GeoPhotosContext.tsx      # Proveedor global conectado a SQLite
 ├── types/
-│   └── geo.ts                    # Modelos de datos TypeScript (Coords, GeoPhoto, PermissionState)
-├── app.json                      # Configuracion de Expo y plugins nativos
-├── AI-LOG.md                     # Registro de auditoria de IA y deteccion de alucinaciones
-├── GUIA_DESARROLLO_GEOCAM.md     # Guia detallada del proyecto
-└── README.md                     # Documentacion general y evidencia de pruebas
+│   └── geo.ts                    # Modelos de datos TypeScript (GeoPhoto, Coords, AlbumItem)
+├── drizzle.config.ts             # Configuracion de Drizzle Kit para Expo SQLite
+├── metro.config.js               # Resolucion de archivos .sql para migraciones
+├── babel.config.js               # Plugin inline-import para SQL
+├── AI-LOG.md                     # Auditoria de IA de la Semana 7
+└── README.md                     # Documentacion general del repositorio
 ```
 
 ---
 
-## Maquina de Estados de Permisos
+## Verificacion de Criterios de Entrega
 
-GeoCam implementa la maquina de estados de permisos requerida:
-
-```text
-checking ──> undetermined ──> (acepta)  ──> granted
-                          ──> (rechaza) ──> denied ──> (rechaza de nuevo) ──> blocked
-blocked  ──> Linking.openSettings() ──> (habilita en Ajustes) ──> granted
-```
-
-### Evidencia de los Estados de Permisos
-
-| 1. Permiso Concedido (`granted`) | 2. Permiso Rechazado (`denied`) | 3. Permiso Bloqueado (`blocked`) |
-| :---: | :---: | :---: |
-| Camara activa con coordenadas GPS en vivo (ej. `11.544, -72.907`) | Camara activa sin GPS. Muestra banner superior: "Activa la ubicacion para etiquetar tus fotos" | Pantalla PermissionPrimer con boton directo: "Abrir Ajustes" |
-| Visible en pestaña Mapa con ubicacion en tiempo real (Riohacha) | Las fotos se guardan con `coords: null` y se agrupan en "Sin ubicacion" | Redirige al menu de permisos de iOS / Android mediante Linking |
-
----
-
-## Instrucciones de Ejecucion
-
-1. Instalar las dependencias del proyecto:
-   ```bash
-   npm install
-   ```
-
-2. Iniciar el servidor de desarrollo de Expo con soporte para tunel:
-   ```bash
-   npx expo start --tunnel
-   ```
-
-3. Abrir la aplicacion **Expo Go** en un dispositivo fisico (Android o iOS) y escanear el codigo QR mostrado en la terminal.
-
----
-
-## Pruebas Realizadas
-
-- [x] **Permisos en contexto**: La aplicacion no solicita permisos al arrancar; se consultan pasivamente de fondo y se solicita autorizacion solo por accion del usuario.
-- [x] **Degradacion elegante**: Al denegar la ubicacion, las fotos se guardan correctamente y se listan en el panel "Sin ubicacion" del mapa.
-- [x] **Redireccion a Ajustes**: Cuando el permiso se encuentra bloqueado, el boton conduce directamente al panel de ajustes del sistema operativo.
-- [x] **Limpieza de recursos**: Todas las suscripciones a sensores (`Accelerometer`) y GPS (`watchPositionAsync`) se liberan mediante `.remove()` y la bandera `cancelled` al salir de la pantalla.
-- [x] **Ejecucion en dispositivo fisico**: Verificado en iPhone con iOS mediante Expo Go, validando mapa interactivo nativo, deteccion de ubicacion y navegacion por pestañas.
+- [x] **Migraciones versionadas**: Se generaron dos migraciones (`0000` y `0001`) con `drizzle-kit generate` sin edicion manual.
+- [x] **Preservacion de datos**: La segunda migracion anade columnas mediante `ALTER TABLE ADD COLUMN` manteniendo intactas las fotos previas.
+- [x] **Separacion de capas**: Las pantallas no importan Drizzle directamente; consumen hooks y el repositorio de datos.
+- [x] **CRUD y Reactividad**: Crear, ver detalle, editar notas, alternar favoritas, reasignar album y borrar funcionan con actualizacion reactiva de la interfaz.
+- [x] **Archivos permanentes**: Fotos copiadas a `Paths.document` y eliminadas fisicamente al borrar su registro en SQLite.
+- [x] **Compilacion TypeScript**: 0 errores de compilacion con `npx tsc --noEmit`.
+- [x] **Validacion Expo Doctor**: 21 de 21 verificaciones aprobadas sin advertencias.

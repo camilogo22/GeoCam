@@ -1,197 +1,159 @@
-# Registro de Auditoría de Inteligencia Artificial (AI-LOG)
+# Registro de Auditoria de Inteligencia Artificial (AI-LOG)
 
-> **Materia:** Desarrollo Móvil — Taller Integrador 2  
-> **Semana:** 6 — Módulos Nativos y Sensores del Dispositivo  
-> **Proyecto:** GeoCam  
+> **Materia:** Desarrollo Movil — Taller Integrador 2  
+> **Semana:** 7 — Base de Datos Local Offline-First con Drizzle ORM y SQLite  
+> **Proyecto:** GeoCam Persistente  
 > **Estudiante:** **Camilo Gomez**  
 > **Docente de referencia:** @AntonioJGL  
-> **Ecosistema:** Expo SDK 57 | React Native 0.86 (New Architecture) | TypeScript
+> **Ecosistema:** Expo SDK 57 | Drizzle ORM | Expo SQLite | TypeScript
 
 ---
 
 > [!NOTE]
-> Este documento registra de manera formal la auditoría técnica realizada sobre el código asistido por IA durante el desarrollo del proyecto **GeoCam**. Su objetivo es identificar alucinaciones, APIs obsoletas y malas prácticas en el acceso a hardware nativo, documentando las correcciones implementadas según los estándares modernos de Expo.
+> Este documento registra la auditoria tecnica realizada sobre el codigo asistido por IA durante el desarrollo del modulo de persistencia local offline-first con Drizzle ORM y SQLite en GeoCam. Se documentan las alucinaciones detectadas, diferencias entre codigo generado y corregido, y la matriz de validacion de APIs de bases de datos embebidas.
 
 ---
 
-## 1. Prompts Utilizados y Objetivos Técnicos
+## 1. Prompts Utilizados y Objetivos Tecnicos
 
-| # | Prompt Ejecutado | Objetivo Técnico | Resultado Obtenido |
+| # | Prompt Ejecutado | Objetivo Tecnico | Resultado Obtenido |
 | :---: | :--- | :--- | :--- |
-| **P1** | *"Escribe un Custom Hook en React Native con TypeScript que detecte cuando el usuario agita el teléfono usando expo-sensors, con umbral configurable y prevención de fugas de memoria."* | Encapsular el acelerómetro con frecuencia controlada, cálculo vectorial y limpieza de suscripción. | Generó un hook funcional pero con errores críticos de frecuencia de muestreo y sin protección contra suscripciones huérfanas. |
-| **P2** | *"Implementa un hook useCamera con la nueva API de Expo Camera (CameraView) que evite colapsos por doble pulsación y permita alternar entre cámara frontal y trasera."* | Manejar el ciclo de cámara nativa con estados de preparación (`onCameraReady`) y guarda de concurrencia. | Propuso la sintaxis moderna pero intentó anidar controles hijos dentro del componente `<CameraView>`. |
-| **P3** | *"Crea un hook useGeoLocation con máquina de estados de permisos completa (checking, undetermined, granted, denied, blocked) y degradación elegante si el usuario rechaza el GPS."* | Implementar el flujo UX recomendado por Apple y Google: consulta pasiva inicial y solicitud explícita bajo demanda. | Propuso solicitar permisos de inmediato en el montaje del componente, violando las pautas de UX móvil. |
+| **P1** | *"Crea con Drizzle ORM y expo-sqlite una tabla albums relacionada con photos, de forma que al borrar un album las fotos no se eliminen."* | Definir esquemas relacionales con llave foranea opcional y regla de eliminacion ON DELETE SET NULL. | La IA propuso el esquema pero configuro onDelete: 'cascade', lo cual destruiria las fotos al eliminar el album. |
+| **P2** | *"Genera una segunda migracion en Drizzle ORM que agregue las columnas note y favorite con valor por defecto false sin perder los datos existentes."* | Modificar el esquema para admitir notas y favoritas, generando migraciones incrementales automáticas con drizzle-kit generate. | La IA intento ejecutar drizzle-kit push en lugar de generar archivos SQL locales para el migrador movil. |
+| **P3** | *"Como implementar persistencia fisica de fotos en la carpeta de documentos de la app con expo-file-system y eliminar el archivo cuando se borre en SQLite."* | Evitar depender de URIs temporales de cache y garantizar limpieza de archivos huerfanos al borrar registros. | La IA mezclo clases de la nueva API (File, Directory) con metodos de la API legacy (FileSystem.copyAsync). |
 
 ---
 
-## 2. Análisis Comparativo: Código Generado vs. Código Modificado
+## 2. Analisis Comparativo: Codigo Generado vs. Codigo Modificado
 
-### 2.1 Sensor de Agitado (`hooks/useShake.ts`)
+### 2.1 Relacion entre Albums y Photos (`db/schema.ts`)
 
 > [!WARNING]
-> **Deficiencia de la IA:** La IA omitió configurar el intervalo de actualización del sensor (`setUpdateInterval`), lo que provoca que el acelerómetro opere a máxima frecuencia (hasta 200 Hz en Android), drenando la batería en minutos. Además, no implementó tiempo de enfriamiento (cooldown), disparando el callback decenas de veces con un solo movimiento físico.
+> **Deficiencia de la IA:** La IA genero la relacion foranea con `onDelete: 'cascade'`. Esto viola directamente el requisito C1, ya que al eliminar un album se eliminarian todas las fotos asociadas. Ademas, omitio configurar el `PRAGMA foreign_keys = ON;` en la conexion SQLite, lo que hace que SQLite ignore cualquier regla de integridad referencial.
 
 #### Codigo Inicial Propuesto por la IA:
 
 ```typescript
-// Codigo generado inicialmente por la IA
-useEffect(() => {
-  const subscription = Accelerometer.addListener(({ x, y, z }) => {
-    const total = Math.sqrt(x * x + y * y + z * z);
-    if (total > 1.78) {
-      onShake(); // Se dispara 20-30 veces por cada sacudida
-    }
-  });
-  return () => subscription.remove();
-}, [onShake]); // Recrea el listener nativo en cada re-render
+// Codigo generado inicialmente por la IA (Inseguro para fotos)
+export const photos = sqliteTable('photos', {
+  id: text('id').primaryKey(),
+  uri: text('uri').notNull(),
+  albumId: integer('album_id')
+    .notNull()
+    .references(() => albums.id, { onDelete: 'cascade' }), // Borra las fotos si se borra el album
+});
 ```
 
 #### Codigo Final Modificado y Corregido:
 
 ```typescript
-// Codigo refactorizado y corregido
-const callbackRef = useRef(onShake);
-callbackRef.current = onShake;
-const lastShakeTime = useRef<number>(0);
+// Codigo refactorizado y corregido segun requisito C1
+export const photos = sqliteTable('photos', {
+  id: text('id').primaryKey(),
+  uri: text('uri').notNull(),
+  latitude: real('latitude'),
+  longitude: real('longitude'),
+  accuracy: real('accuracy'),
+  source: text('source', { enum: ['camera', 'gallery'] }).notNull().default('camera'),
+  createdAt: integer('created_at').notNull(),
+  albumId: integer('album_id').references(() => albums.id, { onDelete: 'set null' }), // Fotos quedan sin album
+  note: text('note'),
+  favorite: integer('favorite', { mode: 'boolean' }).notNull().default(false),
+});
 
-useEffect(() => {
-  if (Platform.OS === 'web') {
-    setIsAvailable(false);
-    return;
-  }
-  let cancelled = false;
-  let subscription: { remove: () => void } | null = null;
-
-  Accelerometer.isAvailableAsync().then((available) => {
-    if (cancelled || !available) return;
-    Accelerometer.setUpdateInterval(100); // 100 ms: balance optimo bateria/gesto
-
-    subscription = Accelerometer.addListener(({ x, y, z }) => {
-      const magnitude = Math.sqrt(x * x + y * y + z * z);
-      const now = Date.now();
-      // Filtro con cooldown de 1000 ms para evento unico
-      if (magnitude > threshold && now - lastShakeTime.current > cooldownMs) {
-        lastShakeTime.current = now;
-        callbackRef.current();
-      }
-    });
-  });
-  return () => {
-    cancelled = true;
-    subscription?.remove();
-  };
-}, [threshold, cooldownMs]);
+// En db/client.ts:
+export const expoDb = openDatabaseSync('geocam.db', { enableChangeListener: true });
+expoDb.execSync('PRAGMA foreign_keys = ON;'); // Obliga a SQLite a respetar llaves foraneas
 ```
 
 ---
 
-### 2.2 Ciclo de Permisos y Degradacion de GPS (`hooks/useGeoLocation.ts`)
+### 2.2 Persistencia de Archivos Fisicos (`services/photoFiles.ts`)
 
 > [!IMPORTANT]
-> **Regla de UX de Autorizacion:** Nunca se deben pedir permisos en el evento de montaje de la pantalla. En iOS, si el usuario deniega el permiso una sola vez, la app queda permanentemente bloqueada. La consulta inicial debe ser puramente pasiva mediante `getForegroundPermissionsAsync()`.
+> **Regla de Persistencia:** Las fotos tomadas con la camara se guardan inicialmente en el directorio de cache temporal del sistema operativo, el cual puede ser purgado cuando el dispositivo tiene poco espacio. Para persistencia permanente deben copiarse a `Paths.document` y registrar la nueva ruta en SQLite.
 
 #### Codigo Inicial Propuesto por la IA:
 
 ```typescript
-// Mala practica propuesta por la IA (Pedir permiso al arrancar)
-useEffect(() => {
-  Location.requestForegroundPermissionsAsync().then((res) => {
-    setPermission(res.granted ? 'granted' : 'denied');
-  });
-}, []);
+// Mezcla de API antigua y nueva producida por la IA
+import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
+
+export async function persistPhoto(uri: string) {
+  const dest = FileSystem.documentDirectory + 'photo.jpg';
+  await FileSystem.copyAsync({ from: uri, to: dest }); // Metodo legacy
+}
 ```
 
 #### Codigo Final Modificado y Corregido:
 
 ```typescript
-// Solucion implementada (Consulta pasiva + solicitud en contexto)
-useEffect(() => {
-  let cancelled = false;
-  // Solo consulta el estado actual sin mostrar dialogo invasivo
-  Location.getForegroundPermissionsAsync()
-    .then((res) => {
-      if (!cancelled) setState((s) => ({ ...s, permission: mapPermission(res) }));
-    })
-    .catch(() => {
-      if (!cancelled) setState((s) => ({ ...s, permission: 'denied' }));
-    });
-  return () => {
-    cancelled = true;
-  };
-}, []);
+// Implementacion consistente con las clases modernas de Expo SDK 57
+import { Directory, File, Paths } from 'expo-file-system';
 
-// La solicitud real solo se ejecuta cuando el usuario pulsa el boton
-const requestPermission = useCallback(async (): Promise<boolean> => {
-  const res = await Location.requestForegroundPermissionsAsync();
-  setState((s) => ({ ...s, permission: mapPermission(res) }));
-  return res.granted;
-}, []);
+const photosDir = new Directory(Paths.document, 'photos');
+
+export function persistPhoto(cacheUri: string): string {
+  if (!photosDir.exists) photosDir.create();
+  const source = new File(cacheUri);
+  const destination = new File(photosDir, `${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`);
+  source.copy(destination);
+  return destination.uri;
+}
+
+export function deletePhotoFile(uri: string): void {
+  const file = new File(uri);
+  if (file.exists) file.delete();
+}
 ```
 
 ---
 
-## 3. Catálogo Detallado de Alucinaciones y Errores Detectados
+## 3. Catalogo Detallado de Alucinaciones y Errores Detectados
 
-### Caso 1: API de Cámara Deprecada
-* **Alucinación:** `import { Camera } from 'expo-camera'` con llamadas a `Camera.requestCameraPermissionsAsync()`.
-* **Causa:** Los modelos de lenguaje fueron entrenados con versiones legacy de Expo (SDK 48-50) donde la clase `Camera` era el estándar.
-* **Impacto:** En el SDK 51+ y la New Architecture, dicha API fue retirada en favor de componentes modulares.
-* **Corrección:** Se migró a `CameraView` y al hook oficial `useCameraPermissions()`.
+### Caso 1: Driver de Base de Datos para Servidor en Entorno Movil
+* **Alucinacion:** `import { drizzle } from 'drizzle-orm/better-sqlite3'`.
+* **Causa:** Los modelos de IA asumen por defecto el entorno Node.js para SQLite. `better-sqlite3` es una libreria compilada en C++ nativo para servidores que no puede ejecutarse dentro de los motores JavaScript de React Native / Hermes.
+* **Correccion:** Uso exclusivo de `drizzle-orm/expo-sqlite` junto con `openDatabaseSync` de `expo-sqlite`.
 
-### Caso 2: Violación de Jerarquía en `<CameraView>`
-* **Alucinación:** La IA intentó estructurar controles de disparo como hijos directos:
-  ```tsx
-  <CameraView>
-    <Pressable onPress={takePhoto}><Text>Disparar</Text></Pressable>
-  </CameraView>
-  ```
-* **Causa:** En versiones antiguas de `expo-camera`, el componente admitía elementos hijos.
-* **Impacto:** `CameraView` moderno no soporta componentes hijos directos, generando fallas visuales y bloqueos de eventos táctiles en Android e iOS.
-* **Corrección:** Se implementaron los controles como componentes hermanos superpuestos utilizando posición absoluta (`StyleSheet.absoluteFill`).
+### Caso 2: Intento de Ejecutar drizzle-kit push en Dispositivo Embebido
+* **Alucinacion:** La IA indico ejecutar `npx drizzle-kit push` para aplicar los cambios de las tablas.
+* **Causa:** `drizzle-kit push` requiere una conexion TCP viva contra un servidor de base de datos. En un telefono celular, la base de datos es un archivo local embebido en el almacenamiento seguro de la aplicacion.
+* **Correccion:** Se genero el historial de migraciones SQL con `npx drizzle-kit generate` y se aplicaron en el arranque de la aplicacion mediante el hook oficial `useMigrations(db, migrations)` en `app/_layout.tsx`.
 
-### Caso 3: Constantes Deprecadas en `ImagePicker`
-* **Alucinación:** `mediaTypes: ImagePicker.MediaTypeOptions.Images`.
-* **Causa:** La enumeración `MediaTypeOptions` fue declarada obsoleta en las últimas versiones del SDK.
-* **Corrección:** Uso del arreglo directo de cadenas: `mediaTypes: ['images']`.
+### Caso 3: Omision de enableChangeListener en la Apertura de SQLite
+* **Alucinacion:** `const db = openDatabaseSync('geocam.db');` sin opciones adicionales.
+* **Impacto:** Provoca que los hooks y consultas reactivas no reciban notificaciones de cambios cuando ocurren operaciones concurrentes de insercion o eliminacion.
+* **Correccion:** Apertura explícita con `openDatabaseSync('geocam.db', { enableChangeListener: true })`.
 
-### Caso 4: Fuga de Recursos por Suscripciones Asíncronas Huérfanas
-* **Alucinación:**
-  ```tsx
-  useEffect(() => {
-    Location.watchPositionAsync({}, (loc) => setCoords(loc.coords));
-  }, []);
-  ```
-* **Impacto Crítico:** 
-  1. No guarda la referencia para ejecutar `subscription.remove()`, dejando el GPS activo indefinidamente.
-  2. Como `watchPositionAsync` es una promesa asíncrona, si el usuario abandona la pantalla antes de resolverse, la suscripción se inicia pero no se puede cancelar (suscripción huérfana).
-* **Corrección:** Se implementó el patrón de bandera booleana `let cancelled = false;` evaluada en el callback `.then(sub => if (cancelled) sub.remove())`.
+### Caso 4: Inoperancia de Llaves Foraneas por Omision de PRAGMA
+* **Alucinacion:** Definir relaciones en Drizzle asumiendo que SQLite hace cumplir las restricciones por defecto.
+* **Impacto:** En el motor C de SQLite, el soporte de llaves foraneas viene deshabilitado por compatibilidad historica (`PRAGMA foreign_keys = OFF`). Sin activarlo, al borrar un album la columna `albumId` de las fotos conservaba el ID borrado en lugar de colocarse en `NULL`.
+* **Correccion:** Ejecucion de `expoDb.execSync('PRAGMA foreign_keys = ON;')` inmediatamente despues de abrir la base de datos.
 
-### Caso 5: Excepción Nativa en Entorno Web (`expo-sensors`)
-* **Alucinación / Error de Módulo:** En navegadores de escritorio, `Accelerometer.isAvailableAsync()` retornaba `true`, pero el módulo `ExponentAccelerometer.web.js` carece del método `addListener`, arrojando:
-  ```text
-  TypeError: this._nativeModule.addListener is not a function
-  ```
-* **Corrección:** Se agregó la guarda condicional `Platform.OS === 'web'` en `useShake.ts` junto con un bloque `try/catch` para desactivar el sensor con degradación elegante en la web y no bloquear el flujo de desarrollo.
+### Caso 5: Mezcla de Metodos Asincronos Legacy con Clases Nuevas de FileSystem
+* **Alucinacion:** Uso simultaneo de `FileSystem.copyAsync()` con `new File()`.
+* **Correccion:** Adopcion uniforme de la API moderna basada en clases (`Directory`, `File`, `Paths`) disponible en el SDK 57 de Expo.
 
 ---
 
-## 4. Matriz Oficial de Auditoría: Código IA vs. Estándar Expo SDK 57
+## 4. Matriz Oficial de Auditoria: Codigo IA vs. Estandar Drizzle y SQLite
 
-| Característica / API | Generado por la IA | Problema Técnico | Estándar Oficial Implementado |
+| Caracteristica / API | Generado por la IA | Problema Tecnico | Estandar Oficial Implementado |
 | :--- | :--- | :--- | :--- |
-| **Acceso a Cámara** | `import { Camera } from 'expo-camera'` | API heredada y deprecada en SDK 51+ | `import { CameraView, useCameraPermissions } from 'expo-camera'` |
-| **Gestión de Permisos** | `import * as Permissions from 'expo-permissions'` | Paquete eliminado del núcleo de Expo | Permisos independientes por módulo (`Location.requestForegroundPermissionsAsync()`) |
-| **Selector de Medios** | `mediaTypes: ImagePicker.MediaTypeOptions.Images` | Propiedad obsoleta | `mediaTypes: ['images']` |
-| **Estructura de Cámara** | Botones e interfaces dentro de `<CameraView>` | Sin soporte de hijos en `CameraView` | Controles superpuestos en posición absoluta con z-index |
-| **Limpieza de Hardware** | `watchPositionAsync` sin función de cleanup | Consumo continuo de batería y GPS activo | Retorno de función de limpieza con `.remove()` y bandera `cancelled` |
-| **Estrategia de Permisos** | Solicitar todo en el `useEffect` de montaje | Rechazo prematuro por el usuario (especialmente en iOS) | Petición contextual mediada por el componente `PermissionPrimer` |
-| **Instalación de Paquetes** | `npm install expo-camera expo-location` | Incompatibilidad de versiones menores con el SDK | `npx expo install expo-camera expo-location` |
-| **Alcance de Ubicación** | `requestBackgroundPermissionsAsync` para fotos | Permiso intrusivo que ocasiona rechazo en Google Play | Exclusivamente ubicación en primer plano (`Foreground`) |
+| **Driver ORM** | `drizzle-orm/better-sqlite3` | Modulo nativo de Node.js, falla en celular | `drizzle-orm/expo-sqlite` |
+| **Apertura de Conexion** | `openDatabase('db')` | API deprecada y retirada de expo-sqlite | `openDatabaseSync('geocam.db', { enableChangeListener: true })` |
+| **Aplicacion de Esquema** | `npx drizzle-kit push` | Incompatible con bases locales sin servidor | `npx drizzle-kit generate` + `useMigrations()` |
+| **Configuracion Drizzle** | `drizzle.config.ts` sin driver expo | No genera migrations.js empaquetado | `driver: 'expo'`, `dialect: 'sqlite'` |
+| **Integridad Referencial** | Omitir PRAGMA foreign_keys | SQLite ignora onDelete: 'set null' | `expoDb.execSync('PRAGMA foreign_keys = ON;')` |
+| **Persistencia de Archivos** | `FileSystem.copyAsync` mixto | Mezcla de modulos legacy con clases nuevas | Clases unificadas `Directory`, `File` y `Paths` |
+| **Filtros Reactivos** | Filtros en memoria sin LIKE SQL | Mal rendimiento en colecciones grandes | Consultas parametrizadas con `like()`, `eq()` y `isNull()` |
 
 ---
 
 ## 5. Conclusiones y Aprendizajes
 
-1. **La IA tiende a desactualizarse en frameworks móviles:** Los modelos de IA suelen generar código correspondiente a versiones anteriores de Expo (SDK 48 a 50). Es indispensable cotejar siempre las respuestas contra la documentación oficial de la versión instalada (`expo` en `package.json`).
-2. **El hardware exige ciclo de vida responsable:** El acceso a sensores físicos (cámara, acelerómetro, GPS) no puede tratarse como peticiones asíncronas aisladas; toda suscripción iniciada debe liberarse explícitamente para preservar la batería y memoria del dispositivo.
-3. **La arquitectura de tipos protege la experiencia de usuario:** Tipar `coords: Coords | null` en TypeScript obligó al sistema de tipos a validar en cada pantalla el escenario en que no existe señal de GPS, garantizando una degradación elegante sin cierres inesperados de la aplicación.
+1. **Las migraciones deben ser inmutables:** En bases de datos embebidas locales, nunca se debe editar un archivo `.sql` de migracion generado a mano. Cada cambio de esquema (como anadir `note` y `favorite`) debe corresponder a un nuevo archivo de migracion (`0000`, `0001`) generado por el CLI para preservar los datos de los usuarios.
+2. **Las llaves foraneas en SQLite requieren activacion manual:** A diferencia de PostgreSQL o MySQL, SQLite exige ejecutar explícitamente `PRAGMA foreign_keys = ON;` al abrir cada conexion para garantizar que reglas como `ON DELETE SET NULL` funcionen.
+3. **Persistencia dual (Metadatos + Archivos):** Una aplicacion offline-first robusta debe sincronizar el ciclo de vida del registro en la base de datos con el ciclo de vida del archivo en disco. Al eliminar una foto de SQLite, debe removerse simultaneamente el archivo fisico para no consumir almacenamiento huerfano en el dispositivo.

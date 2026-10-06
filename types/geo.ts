@@ -20,4 +20,13 @@ export interface GeoPhoto {
   coords: Coords | null; // null si el usuario negó la ubicación (degradación elegante)
   source: 'camera' | 'gallery';
   createdAt: number;
+  albumId?: number | null;
+  note?: string | null;
+  favorite?: boolean;
+}
+
+export interface AlbumItem {
+  id: number;
+  name: string;
+  createdAt: number;
 }

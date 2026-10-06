@@ -1,11 +1,13 @@
 // app/(tabs)/mapa.web.tsx
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Image, FlatList, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Image, FlatList, ScrollView, Pressable } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useGeoPhotos } from '@/context/GeoPhotosContext';
 import { useGeoLocation } from '@/hooks/useGeoLocation';
 import type { GeoPhoto } from '@/types/geo';
 
 export default function MapaWebScreen() {
+  const router = useRouter();
   const { photos } = useGeoPhotos();
   const { coords: currentCoords } = useGeoLocation({ watch: false });
 
@@ -26,7 +28,7 @@ export default function MapaWebScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title}>🗺️ Vista de Mapa (Modo Web)</Text>
+        <Text style={styles.title}>Vista de Mapa (Modo Web)</Text>
         <Text style={styles.subtitle}>
           react-native-maps utiliza módulos nativos de iOS y Android. En el navegador web se muestra el registro georreferenciado de fotos.
         </Text>
@@ -34,7 +36,7 @@ export default function MapaWebScreen() {
 
       {currentCoords && (
         <View style={styles.coordsCard}>
-          <Text style={styles.coordsCardTitle}>📍 Tu ubicación actual detectada:</Text>
+          <Text style={styles.coordsCardTitle}>Tu ubicación actual detectada:</Text>
           <Text style={styles.coordsCardValue}>
             Lat: {currentCoords.latitude.toFixed(5)} | Lon: {currentCoords.longitude.toFixed(5)}
           </Text>
@@ -55,11 +57,15 @@ export default function MapaWebScreen() {
         ) : (
           <View style={styles.grid}>
             {mappedPhotos.map((photo) => (
-              <View key={photo.id} style={styles.photoCard}>
+              <Pressable
+                key={photo.id}
+                onPress={() => router.push(`/photo/${photo.id}`)}
+                style={styles.photoCard}
+              >
                 <Image source={{ uri: photo.uri }} style={styles.photoImage} />
                 <View style={styles.photoInfo}>
                   <Text style={styles.photoSource}>
-                    {photo.source === 'camera' ? '📷 Cámara' : '🖼️ Galería'}
+                    {photo.source === 'camera' ? 'Cámara' : 'Galería'}
                   </Text>
                   <Text style={styles.photoCoords}>
                     {photo.coords.latitude.toFixed(5)}, {photo.coords.longitude.toFixed(5)}
@@ -67,8 +73,9 @@ export default function MapaWebScreen() {
                   <Text style={styles.photoTime}>
                     {new Date(photo.createdAt).toLocaleTimeString()}
                   </Text>
+                  <Text style={styles.clickNote}>Toca para ver detalle</Text>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </View>
         )}
@@ -85,14 +92,17 @@ export default function MapaWebScreen() {
             data={unmappedPhotos}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <View style={styles.unmappedCard}>
+              <Pressable
+                onPress={() => router.push(`/photo/${item.id}`)}
+                style={styles.unmappedCard}
+              >
                 <Image source={{ uri: item.uri }} style={styles.unmappedThumb} />
                 <View style={styles.unmappedBadge}>
                   <Text style={styles.unmappedBadgeText}>
-                    {item.source === 'camera' ? '📷' : '🖼️'}
+                    {item.source === 'camera' ? 'Cámara' : 'Galería'}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             )}
             showsHorizontalScrollIndicator={false}
           />
@@ -208,6 +218,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  clickNote: {
+    color: '#10b981',
+    fontSize: 10,
+    marginTop: 4,
+    fontWeight: 'bold',
+  },
   unmappedCard: {
     marginRight: 12,
     position: 'relative',
@@ -229,5 +245,6 @@ const styles = StyleSheet.create({
   },
   unmappedBadgeText: {
     fontSize: 10,
+    color: '#d4d4d4',
   },
 });

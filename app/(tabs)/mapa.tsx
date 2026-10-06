@@ -1,12 +1,14 @@
 // app/(tabs)/mapa.tsx
 import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, Image, FlatList } from 'react-native';
+import { View, Text, StyleSheet, Image, FlatList, Pressable } from 'react-native';
+import { useRouter } from 'expo-router';
 import MapView, { Marker, Callout } from 'react-native-maps';
 import { useGeoPhotos } from '@/context/GeoPhotosContext';
 import { useGeoLocation } from '@/hooks/useGeoLocation';
 import type { GeoPhoto } from '@/types/geo';
 
 export default function MapaScreen() {
+  const router = useRouter();
   const { photos } = useGeoPhotos();
   const { coords: currentCoords } = useGeoLocation({ watch: false });
 
@@ -73,7 +75,7 @@ export default function MapaScreen() {
             }
             description={new Date(photo.createdAt).toLocaleTimeString()}
           >
-            <Callout>
+            <Callout onPress={() => router.push(`/photo/${photo.id}`)}>
               <View style={styles.calloutBox}>
                 <Image
                   source={{ uri: photo.uri }}
@@ -81,10 +83,13 @@ export default function MapaScreen() {
                   resizeMode="cover"
                 />
                 <Text style={styles.calloutText}>
-                  {photo.source === 'camera' ? '📷 Cámara' : '🖼️ Galería'}
+                  {photo.source === 'camera' ? 'Cámara' : 'Galería'}
                 </Text>
                 <Text style={styles.calloutDate}>
                   {new Date(photo.createdAt).toLocaleTimeString()}
+                </Text>
+                <Text style={{ fontSize: 10, color: '#10b981', marginTop: 2, fontWeight: 'bold' }}>
+                  Toca para ver detalle
                 </Text>
               </View>
             </Callout>
@@ -103,17 +108,20 @@ export default function MapaScreen() {
             data={unmappedPhotos}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <View style={styles.unmappedCard}>
+              <Pressable
+                onPress={() => router.push(`/photo/${item.id}`)}
+                style={styles.unmappedCard}
+              >
                 <Image
                   source={{ uri: item.uri }}
                   style={styles.unmappedThumb}
                 />
                 <View style={styles.unmappedBadge}>
                   <Text style={styles.unmappedBadgeText}>
-                    {item.source === 'camera' ? '📷' : '🖼️'}
+                    {item.source === 'camera' ? 'Cámara' : 'Galería'}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             )}
             showsHorizontalScrollIndicator={false}
           />
