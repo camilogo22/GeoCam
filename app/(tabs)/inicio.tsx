@@ -59,6 +59,17 @@ export default function InicioScreen() {
         </View>
       </View>
 
+      {/* Breve descripción de qué hace GeoCam */}
+      <View style={styles.aboutCard}>
+        <View style={styles.aboutHeaderRow}>
+          <Ionicons name="information-circle-outline" size={20} color="#10b981" />
+          <Text style={styles.aboutTitle}>¿Qué hace GeoCam?</Text>
+        </View>
+        <Text style={styles.aboutDescription}>
+          GeoCam combina tu cámara con sensores GPS para capturar fotografías y geolocalizarlas automáticamente en un mapa interactivo. Te permite organizar tus fotos en álbumes, destacar tus favoritas, añadir notas personalizadas y almacenar todo de forma rápida y segura en tu dispositivo con SQLite.
+        </Text>
+      </View>
+
       {/* Grid de Estadísticas */}
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
@@ -271,6 +282,32 @@ const styles = StyleSheet.create({
     color: '#6ee7b7',
     fontSize: 12,
     fontWeight: '600',
+  },
+  aboutCard: {
+    backgroundColor: '#171717',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#262626',
+    borderLeftWidth: 4,
+    borderLeftColor: '#10b981',
+  },
+  aboutHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  aboutTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  aboutDescription: {
+    fontSize: 13,
+    color: '#d4d4d4',
+    lineHeight: 19,
   },
   statsGrid: {
     flexDirection: 'row',
