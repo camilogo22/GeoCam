@@ -85,16 +85,30 @@ export default function PhotoDetailScreen() {
     await refresh();
   };
 
-  // Guardar Nota
+  // Guardar Foto y volver a la ventana de inicio
   const handleSaveNote = async () => {
     if (!photo) return;
     setSaving(true);
     try {
       await setNote(photo.id, noteText.trim().length > 0 ? noteText.trim() : null);
       await refresh();
-      Alert.alert('Éxito', 'Nota guardada correctamente.');
+      Alert.alert(
+        'Éxito',
+        'La foto se guardó exitosamente.',
+        [
+          {
+            text: 'Aceptar',
+            onPress: () => {
+              router.replace('/(tabs)/geocam');
+            },
+          },
+        ],
+        {
+          cancelable: false,
+        }
+      );
     } catch {
-      Alert.alert('Error', 'No se pudo guardar la nota.');
+      Alert.alert('Error', 'No se pudo guardar la foto.');
     } finally {
       setSaving(false);
     }
@@ -198,7 +212,7 @@ export default function PhotoDetailScreen() {
           disabled={saving}
           style={({ pressed }) => [styles.saveBtn, pressed && styles.btnPressed]}
         >
-          <Text style={styles.saveBtnText}>{saving ? 'Guardando...' : 'Guardar Nota'}</Text>
+          <Text style={styles.saveBtnText}>{saving ? 'Guardando...' : 'Guardar Foto'}</Text>
         </Pressable>
       </View>
 
