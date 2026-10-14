@@ -1,23 +1,18 @@
 // types/geo.ts
 
-export type PermissionState =
-  | 'checking'
-  | 'undetermined'
-  | 'granted'
-  | 'denied'
-  | 'blocked';
-
 export interface Coords {
   latitude: number;
   longitude: number;
   accuracy: number | null;
-  timestamp: number;
+  timestamp?: number;
 }
+
+export type PermissionState = 'checking' | 'granted' | 'denied' | 'blocked' | 'undetermined';
 
 export interface GeoPhoto {
   id: string;
   uri: string;
-  coords: Coords | null; // null si el usuario negó la ubicación (degradación elegante)
+  coords: Coords | null;
   source: 'camera' | 'gallery';
   createdAt: number;
   albumId?: number | null;
@@ -30,3 +25,10 @@ export interface AlbumItem {
   name: string;
   createdAt: number;
 }
+
+export interface PhotoFilterOptions {
+  search?: string;
+  albumId?: number | null | 'all';
+  onlyFavorites?: boolean;
+}
+

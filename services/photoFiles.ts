@@ -2,22 +2,16 @@
 import { Platform } from 'react-native';
 import { Directory, File, Paths } from 'expo-file-system';
 
-// Carpeta permanente dentro del directorio de documentos de la app
-let photosDir: Directory | null = null;
-if (Platform.OS !== 'web') {
-  try {
-    photosDir = new Directory(Paths.document, 'photos');
-  } catch {
-    photosDir = null;
-  }
-}
+// Directorio permanente para guardar fotos de la app
+const photosDir = new Directory(Paths.document, 'photos');
 
 /**
- * Copia la foto desde la ruta temporal de caché a la carpeta permanente de documentos.
- * Retorna la URI permanente para guardarla en SQLite.
+ * Copia una foto desde la ubicación temporal (caché) a la carpeta permanente de documentos.
+ * Retorna la URI permanente guardada en el dispositivo.
  */
 export function persistPhoto(cacheUri: string): string {
-  if (Platform.OS === 'web' || !photosDir) {
+  // En Web o si es base64/URL remota, retornar la URI directamente
+  if (Platform.OS === 'web' || !cacheUri || cacheUri.startsWith('data:') || cacheUri.startsWith('http')) {
     return cacheUri;
   }
 
@@ -25,21 +19,29 @@ export function persistPhoto(cacheUri: string): string {
     if (!photosDir.exists) {
       photosDir.create();
     }
+
+    const filename = `geocam_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
     const source = new File(cacheUri);
-    const destination = new File(photosDir, `${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`);
-    source.copy(destination);
-    return destination.uri;
+    const destination = new File(photosDir, filename);
+
+    if (source.exists) {
+      source.copy(destination);
+      return destination.uri;
+    }
+    return cacheUri;
   } catch (e) {
-    console.warn('Error al persistir archivo de foto en documentos:', e);
+    console.warn('Error persistiendo archivo de foto en FileSystem:', e);
     return cacheUri;
   }
 }
 
 /**
- * Elimina físicamente el archivo del almacenamiento del dispositivo.
+ * Elimina el archivo físico de la memoria del dispositivo cuando se borra su registro.
  */
 export function deletePhotoFile(uri: string): void {
-  if (Platform.OS === 'web') return;
+  if (Platform.OS === 'web' || !uri || uri.startsWith('data:') || uri.startsWith('http')) {
+    return;
+  }
 
   try {
     const file = new File(uri);
@@ -47,7 +49,7 @@ export function deletePhotoFile(uri: string): void {
       file.delete();
     }
   } catch (e) {
-    console.warn('Error al eliminar archivo físico de foto:', e);
+    console.warn('Error eliminando archivo físico de foto:', e);
   }
 }
 

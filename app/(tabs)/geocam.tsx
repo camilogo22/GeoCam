@@ -15,8 +15,27 @@ export default function GeoCamScreen() {
   const router = useRouter();
   const cam = useCamera();
   const geo = useGeoLocation({ watch: true });
-  const { photos, addPhoto } = useGeoPhotos();
+  const { photos, addPhoto, clearAll } = useGeoPhotos();
   const [lastPhoto, setLastPhoto] = useState<GeoPhoto | null>(photos[0] ?? null);
+
+  // T5: Integración de Shake para eliminar todas las fotos con confirmación
+  useShake(() => {
+    Alert.alert(
+      '¿Vaciar galería?',
+      'Has agitado el dispositivo. ¿Deseas eliminar permanentemente todas las fotos de SQLite y del almacenamiento?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Vaciar Todo',
+          style: 'destructive',
+          onPress: async () => {
+            await clearAll();
+            setLastPhoto(null);
+          },
+        },
+      ]
+    );
+  });
 
   // Si aún está consultando permisos iniciales
   if (cam.permissionState === 'checking') {
@@ -41,26 +60,26 @@ export default function GeoCamScreen() {
     const photo = await cam.takePhoto();
     if (!photo) return;
 
-    // Degradación elegante: sin permiso de ubicación, coords queda en null
+    // T4: Degradación elegante: sin permiso de ubicación, coords queda en null
     const coords =
       geo.permission === 'granted'
         ? geo.coords ?? (await geo.getCurrent())
         : null;
 
-    const newPhoto: GeoPhoto = {
+    const newPhoto = {
       id: String(Date.now()),
       uri: photo.uri,
       coords,
-      source: 'camera',
+      source: 'camera' as const,
       createdAt: Date.now(),
     };
 
-    // R1: Guardar en estado global y SQLite
+    // T4 & C5: Guardar en FileSystem permanente y SQLite
     const saved = await addPhoto(newPhoto);
     setLastPhoto(saved);
   };
 
-  // R2: Importar imagen desde la galería
+  // Importar imagen desde la galería
   const handlePickFromGallery = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -73,11 +92,11 @@ export default function GeoCamScreen() {
           ? geo.coords ?? (await geo.getCurrent())
           : null;
 
-      const newPhoto: GeoPhoto = {
+      const newPhoto = {
         id: String(Date.now()),
         uri: result.assets[0].uri,
         coords,
-        source: 'gallery',
+        source: 'gallery' as const,
         createdAt: Date.now(),
       };
 
@@ -127,8 +146,9 @@ export default function GeoCamScreen() {
         {/* Botón de galería / última foto con distintivo de origen */}
         <Pressable
           onPress={() => {
-            if (lastPhoto) {
-              router.push(`/photo/${lastPhoto.id}`);
+            const currentLast = photos[0] || lastPhoto;
+            if (currentLast) {
+              router.push(`/photo/${currentLast.id}`);
             } else {
               handlePickFromGallery();
             }
@@ -136,12 +156,12 @@ export default function GeoCamScreen() {
           onLongPress={handlePickFromGallery}
           style={styles.thumbnailBtn}
         >
-          {lastPhoto ? (
+          {photos[0] || lastPhoto ? (
             <View>
-              <Image source={{ uri: lastPhoto.uri }} style={styles.thumbnail} />
+              <Image source={{ uri: (photos[0] || lastPhoto)!.uri }} style={styles.thumbnail} />
               <View style={styles.sourceTag}>
                 <Text style={styles.sourceTagText}>
-                  {lastPhoto.source === 'camera' ? '📷' : '🖼️'}
+                  {(photos[0] || lastPhoto)!.source === 'camera' ? '📷' : '🖼️'}
                 </Text>
               </View>
             </View>

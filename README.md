@@ -22,6 +22,15 @@ Aplicacion movil desarrollada con **Expo**, **React Native**, **TypeScript**, **
 
 ---
 
+## Capturas de Ejecucion en Dispositivo Fisico
+
+| Pantalla Principal (Inicio) | Galería y Álbumes | Mapa GPS Interactiva |
+| :---: | :---: | :---: |
+| <img src="screenshots/inicio.jpg" width="260" alt="Pantalla Inicio GeoCam" /> | <img src="screenshots/galeria.jpg" width="260" alt="Galería y Álbumes GeoCam" /> | <img src="screenshots/mapa.jpg" width="260" alt="Mapa GPS Riohacha GeoCam" /> |
+| *Estadísticas de fotos, estado SQLite & Drizzle activo y fotos recientes.* | *Buscador por notas, filtro por álbumes ("clase") y fotos guardadas.* | *Detección de ubicación GPS y visualización en mapa (Riohacha, Colombia).* |
+
+---
+
 ## Diagrama de Tablas de la Base de Datos
 
 ```text
@@ -48,19 +57,10 @@ Aplicacion movil desarrollada con **Expo**, **React Native**, **TypeScript**, **
 
 ---
 
-## Captura de Ejecucion en Dispositivo Fisico
-
-<p align="center">
-  <img src="screenshots/mapa_ubicacion.jpg" alt="GeoCam en Dispositivo Fisico" width="300" />
-</p>
-<p align="center"><em>Ejecucion de GeoCam en iPhone (iOS) con Expo Go, validando deteccion GPS y mapa interactivo en Riohacha, Colombia.</em></p>
-
----
-
 ## Estructura del Proyecto
 
 ```text
-semana-6/
+semana-7/
 ├── app/
 │   ├── (tabs)/
 │   │   ├── _layout.tsx           # Pestañas: GeoCam, Galeria y Mapa
@@ -74,7 +74,10 @@ semana-6/
 │   └── index.tsx                 # Redireccion a /(tabs)/geocam
 ├── db/
 │   ├── client.ts                 # Instancia de Drizzle ORM y activacion de PRAGMA foreign_keys
-│   └── schema.ts                 # Esquemas relacionales de albums y photos
+│   ├── schema.ts                 # Esquemas relacionales de albums y photos
+│   └── repositories/
+│       ├── photos.ts             # Consultas Drizzle listQuery, withLocationQuery y CRUD
+│       └── albums.ts             # Consultas Drizzle de albumes
 ├── drizzle/                      # Carpeta versionada con migraciones SQL oficiales
 │   ├── meta/
 │   │   └── _journal.json         # Registro historico de migraciones
@@ -83,10 +86,10 @@ semana-6/
 │   └── migrations.js             # Indice de migraciones empaquetadas para Expo
 ├── services/
 │   ├── photoFiles.ts             # Persistencia permanente en Paths.document y borrado fisico
-│   └── photosRepository.ts       # Consultas Drizzle, filtros LIKE y operaciones CRUD
+│   └── photosRepository.ts       # Integracion de repositorios Drizzle y FileSystem
 ├── hooks/
-│   ├── usePhotos.ts              # Hook reactivo de fotos con busqueda y filtros
-│   ├── useAlbums.ts              # Hook reactivo de albumes
+│   ├── usePhotos.ts              # Hook reactivo de fotos con useLiveQuery
+│   ├── useAlbums.ts              # Hook reactivo de albumes con useLiveQuery
 │   ├── useCamera.ts              # Hook nativo de camara
 │   ├── useGeoLocation.ts         # Hook nativo de GPS
 │   └── useShake.ts               # Hook con acelerometro
@@ -94,6 +97,10 @@ semana-6/
 │   └── GeoPhotosContext.tsx      # Proveedor global conectado a SQLite
 ├── types/
 │   └── geo.ts                    # Modelos de datos TypeScript (GeoPhoto, Coords, AlbumItem)
+├── screenshots/                  # Capturas de ejecucion en dispositivo fisico (iPhone)
+│   ├── inicio.jpg
+│   ├── galeria.jpg
+│   └── mapa.jpg
 ├── drizzle.config.ts             # Configuracion de Drizzle Kit para Expo SQLite
 ├── metro.config.js               # Resolucion de archivos .sql para migraciones
 ├── babel.config.js               # Plugin inline-import para SQL
@@ -111,4 +118,3 @@ semana-6/
 - [x] **CRUD y Reactividad**: Crear, ver detalle, editar notas, alternar favoritas, reasignar album y borrar funcionan con actualizacion reactiva de la interfaz.
 - [x] **Archivos permanentes**: Fotos copiadas a `Paths.document` y eliminadas fisicamente al borrar su registro en SQLite.
 - [x] **Compilacion TypeScript**: 0 errores de compilacion con `npx tsc --noEmit`.
-- [x] **Validacion Expo Doctor**: 21 de 21 verificaciones aprobadas sin advertencias.

@@ -1,51 +1,36 @@
 // hooks/useAlbums.ts
-import { useState, useEffect, useCallback } from 'react';
-import { getAlbums, createAlbum, deleteAlbum } from '@/services/photosRepository';
+import { useCallback, useMemo } from 'react';
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { albumsRepo } from '@/db/repositories/albums';
+import { createAlbum, deleteAlbum } from '@/services/photosRepository';
 import type { AlbumItem } from '@/types/geo';
 
 export function useAlbums() {
-  const [albums, setAlbums] = useState<AlbumItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const listQuery = useMemo(() => albumsRepo.listQuery(), []);
+  const { data: rawAlbums = [] } = useLiveQuery(listQuery);
 
-  const loadAlbums = useCallback(async () => {
-    try {
-      setLoading(true);
-      const list = await getAlbums();
-      setAlbums(list);
-    } catch (e) {
-      console.warn('Error al cargar álbumes:', e);
-    } finally {
-      setLoading(false);
-    }
+  const albums: AlbumItem[] = useMemo(
+    () =>
+      (rawAlbums || []).map((a) => ({
+        id: a.id,
+        name: a.name,
+        createdAt: a.createdAt,
+      })),
+    [rawAlbums]
+  );
+
+  const addAlbum = useCallback(async (name: string) => {
+    return await createAlbum(name);
   }, []);
 
-  useEffect(() => {
-    loadAlbums();
-  }, [loadAlbums]);
-
-  const addAlbum = useCallback(
-    async (name: string) => {
-      const created = await createAlbum(name);
-      await loadAlbums();
-      return created;
-    },
-    [loadAlbums]
-  );
-
-  const removeAlbum = useCallback(
-    async (id: number) => {
-      await deleteAlbum(id);
-      await loadAlbums();
-    },
-    [loadAlbums]
-  );
+  const removeAlbum = useCallback(async (id: number) => {
+    await deleteAlbum(id);
+  }, []);
 
   return {
     albums,
-    loading,
-    refresh: loadAlbums,
+    loading: false,
     addAlbum,
     removeAlbum,
   };
 }
-

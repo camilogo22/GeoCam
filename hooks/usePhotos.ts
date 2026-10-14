@@ -1,35 +1,80 @@
 // hooks/usePhotos.ts
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { photosRepo } from '@/db/repositories/photos';
 import {
-  getFilteredPhotos,
   insertPhoto,
   updatePhoto,
   deletePhoto,
   clearAllPhotos,
-  type PhotoFilterOptions,
 } from '@/services/photosRepository';
-import type { GeoPhoto, Coords } from '@/types/geo';
+import type { GeoPhoto, Coords, PhotoFilterOptions } from '@/types/geo';
 
 export function usePhotos(filters: PhotoFilterOptions = {}) {
-  const [photos, setPhotos] = useState<GeoPhoto[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Consulta reactiva basada en filtros
+  const listQuery = useMemo(
+    () => photosRepo.listQuery(filters),
+    [filters.search, filters.albumId, filters.onlyFavorites]
+  );
 
-  const loadPhotos = useCallback(async () => {
-    try {
-      setLoading(true);
-      const list = await getFilteredPhotos(filters);
-      setPhotos(list);
-    } catch (e) {
-      console.warn('Error cargando fotos desde SQLite:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, [filters.search, filters.albumId, filters.onlyFavorites]);
+  // Consulta reactiva para fotos con ubicación
+  const locationQuery = useMemo(() => photosRepo.withLocationQuery(), []);
 
-  useEffect(() => {
-    loadPhotos();
-  }, [loadPhotos]);
+  // useLiveQuery actualiza automáticamente la UI ante cualquier cambio en SQLite
+  const { data: rawPhotos = [] } = useLiveQuery(listQuery, [
+    filters.search,
+    filters.albumId,
+    filters.onlyFavorites,
+  ]);
 
+  const { data: rawPhotosWithLocation = [] } = useLiveQuery(locationQuery);
+
+  // Mapeo seguro de registros de base de datos a objetos tipo GeoPhoto
+  const photos: GeoPhoto[] = useMemo(
+    () =>
+      (rawPhotos || []).map((p) => ({
+        id: p.id,
+        uri: p.uri,
+        coords:
+          p.latitude !== null && p.longitude !== null
+            ? {
+                latitude: p.latitude,
+                longitude: p.longitude,
+                accuracy: p.accuracy ?? null,
+              }
+            : null,
+        source: (p.source as 'camera' | 'gallery') || 'camera',
+        createdAt: p.createdAt,
+        albumId: p.albumId ?? null,
+        note: p.note ?? null,
+        favorite: Boolean(p.favorite),
+      })),
+    [rawPhotos]
+  );
+
+  const photosWithLocation: GeoPhoto[] = useMemo(
+    () =>
+      (rawPhotosWithLocation || []).map((p) => ({
+        id: p.id,
+        uri: p.uri,
+        coords:
+          p.latitude !== null && p.longitude !== null
+            ? {
+                latitude: p.latitude,
+                longitude: p.longitude,
+                accuracy: p.accuracy ?? null,
+              }
+            : null,
+        source: (p.source as 'camera' | 'gallery') || 'camera',
+        createdAt: p.createdAt,
+        albumId: p.albumId ?? null,
+        note: p.note ?? null,
+        favorite: Boolean(p.favorite),
+      })),
+    [rawPhotosWithLocation]
+  );
+
+  // T4: addPhoto convierte Coords a columnas planas y persiste la foto en FileSystem
   const addPhoto = useCallback(
     async (data: {
       id?: string;
@@ -40,54 +85,35 @@ export function usePhotos(filters: PhotoFilterOptions = {}) {
       note?: string | null;
       favorite?: boolean;
     }) => {
-      const created = await insertPhoto(data);
-      await loadPhotos();
-      return created;
+      return await insertPhoto(data);
     },
-    [loadPhotos]
+    []
   );
 
-  const removePhoto = useCallback(
-    async (id: string) => {
-      await deletePhoto(id);
-      await loadPhotos();
-    },
-    [loadPhotos]
-  );
+  const removePhoto = useCallback(async (id: string) => {
+    await deletePhoto(id);
+  }, []);
 
   const clearAll = useCallback(async () => {
     await clearAllPhotos();
-    await loadPhotos();
-  }, [loadPhotos]);
+  }, []);
 
-  const setNote = useCallback(
-    async (id: string, note: string | null) => {
-      await updatePhoto(id, { note });
-      await loadPhotos();
-    },
-    [loadPhotos]
-  );
+  const setNote = useCallback(async (id: string, note: string | null) => {
+    await updatePhoto(id, { note });
+  }, []);
 
-  const setFavorite = useCallback(
-    async (id: string, favorite: boolean) => {
-      await updatePhoto(id, { favorite });
-      await loadPhotos();
-    },
-    [loadPhotos]
-  );
+  const setFavorite = useCallback(async (id: string, favorite: boolean) => {
+    await updatePhoto(id, { favorite });
+  }, []);
 
-  const setAlbum = useCallback(
-    async (id: string, albumId: number | null) => {
-      await updatePhoto(id, { albumId });
-      await loadPhotos();
-    },
-    [loadPhotos]
-  );
+  const setAlbum = useCallback(async (id: string, albumId: number | null) => {
+    await updatePhoto(id, { albumId });
+  }, []);
 
   return {
     photos,
-    loading,
-    refresh: loadPhotos,
+    photosWithLocation,
+    loading: false,
     addPhoto,
     removePhoto,
     clearAll,
@@ -96,4 +122,3 @@ export function usePhotos(filters: PhotoFilterOptions = {}) {
     setAlbum,
   };
 }
-
