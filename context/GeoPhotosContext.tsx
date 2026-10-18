@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useMemo } from 'react';
 import { usePhotos } from '@/hooks/usePhotos';
 import { useAlbums } from '@/hooks/useAlbums';
+import { useAuth } from './AuthContext';
 import type { GeoPhoto, Coords, AlbumItem } from '@/types/geo';
 
 interface GeoPhotosContextType {
@@ -17,6 +18,7 @@ interface GeoPhotosContextType {
     albumId?: number | null;
     note?: string | null;
     favorite?: boolean;
+    ownerId?: string | null;
   }) => Promise<GeoPhoto>;
   removePhoto: (id: string) => Promise<void>;
   clearAll: () => Promise<void>;
@@ -31,17 +33,21 @@ interface GeoPhotosContextType {
 const GeoPhotosContext = createContext<GeoPhotosContextType | undefined>(undefined);
 
 export function GeoPhotosProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const ownerId = user?.id ?? null;
+
+  // C5: Filtra fotos locales asociadas al usuario autenticado actual
   const {
     photos,
     photosWithLocation,
     loading: photosLoading,
-    addPhoto,
+    addPhoto: addPhotoBase,
     removePhoto,
     clearAll,
     setNote,
     setFavorite,
     setAlbum,
-  } = usePhotos();
+  } = usePhotos({ ownerId });
 
   const {
     albums,
@@ -49,6 +55,22 @@ export function GeoPhotosProvider({ children }: { children: React.ReactNode }) {
     addAlbum,
     removeAlbum,
   } = useAlbums();
+
+  const addPhoto = (photo: {
+    id?: string;
+    uri: string;
+    coords: Coords | null;
+    source: 'camera' | 'gallery';
+    albumId?: number | null;
+    note?: string | null;
+    favorite?: boolean;
+    ownerId?: string | null;
+  }) => {
+    return addPhotoBase({
+      ...photo,
+      ownerId: photo.ownerId ?? ownerId,
+    });
+  };
 
   const refresh = async () => {
     // Las consultas son reactivas con useLiveQuery

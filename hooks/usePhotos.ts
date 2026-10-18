@@ -11,25 +11,29 @@ import {
 import type { GeoPhoto, Coords, PhotoFilterOptions } from '@/types/geo';
 
 export function usePhotos(filters: PhotoFilterOptions = {}) {
-  // Consulta reactiva basada en filtros
+  // Consulta reactiva basada en filtros y ownerId
   const listQuery = useMemo(
     () => photosRepo.listQuery(filters),
-    [filters.search, filters.albumId, filters.onlyFavorites]
+    [filters.search, filters.albumId, filters.onlyFavorites, filters.ownerId]
   );
 
   // Consulta reactiva para fotos con ubicación
-  const locationQuery = useMemo(() => photosRepo.withLocationQuery(), []);
+  const locationQuery = useMemo(
+    () => photosRepo.withLocationQuery(filters.ownerId),
+    [filters.ownerId]
+  );
 
   // useLiveQuery actualiza automáticamente la UI ante cualquier cambio en SQLite
   const { data: rawPhotos = [] } = useLiveQuery(listQuery, [
     filters.search,
     filters.albumId,
     filters.onlyFavorites,
+    filters.ownerId,
   ]);
 
-  const { data: rawPhotosWithLocation = [] } = useLiveQuery(locationQuery);
+  const { data: rawPhotosWithLocation = [] } = useLiveQuery(locationQuery, [filters.ownerId]);
 
-  // Mapeo seguro de registros de base de datos a objetos tipo GeoPhoto
+  // Mapeo seguro de registros de base de datos a objetos tipo GeoPhoto con campos de sync
   const photos: GeoPhoto[] = useMemo(
     () =>
       (rawPhotos || []).map((p) => ({
@@ -48,6 +52,11 @@ export function usePhotos(filters: PhotoFilterOptions = {}) {
         albumId: p.albumId ?? null,
         note: p.note ?? null,
         favorite: Boolean(p.favorite),
+        clientId: p.clientId ?? null,
+        updatedAt: p.updatedAt ?? null,
+        remotePath: p.remotePath ?? null,
+        syncedAt: p.syncedAt ?? null,
+        ownerId: p.ownerId ?? null,
       })),
     [rawPhotos]
   );
@@ -70,6 +79,11 @@ export function usePhotos(filters: PhotoFilterOptions = {}) {
         albumId: p.albumId ?? null,
         note: p.note ?? null,
         favorite: Boolean(p.favorite),
+        clientId: p.clientId ?? null,
+        updatedAt: p.updatedAt ?? null,
+        remotePath: p.remotePath ?? null,
+        syncedAt: p.syncedAt ?? null,
+        ownerId: p.ownerId ?? null,
       })),
     [rawPhotosWithLocation]
   );
@@ -84,6 +98,7 @@ export function usePhotos(filters: PhotoFilterOptions = {}) {
       albumId?: number | null;
       note?: string | null;
       favorite?: boolean;
+      ownerId?: string | null;
     }) => {
       return await insertPhoto(data);
     },

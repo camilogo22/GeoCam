@@ -157,3 +157,18 @@ export function deletePhotoFile(uri: string): void {
 1. **Las migraciones deben ser inmutables:** En bases de datos embebidas locales, nunca se debe editar un archivo `.sql` de migracion generado a mano. Cada cambio de esquema (como anadir `note` y `favorite`) debe corresponder a un nuevo archivo de migracion (`0000`, `0001`) generado por el CLI para preservar los datos de los usuarios.
 2. **Las llaves foraneas en SQLite requieren activacion manual:** A diferencia de PostgreSQL o MySQL, SQLite exige ejecutar explícitamente `PRAGMA foreign_keys = ON;` al abrir cada conexion para garantizar que reglas como `ON DELETE SET NULL` funcionen.
 3. **Persistencia dual (Metadatos + Archivos):** Una aplicacion offline-first robusta debe sincronizar el ciclo de vida del registro en la base de datos con el ciclo de vida del archivo en disco. Al eliminar una foto de SQLite, debe removerse simultaneamente el archivo fisico para no consumir almacenamiento huerfano en el dispositivo.
+
+---
+
+## 6. Auditoría Semana 8 — Backend as a Service con Supabase
+
+### 6.1 Prompts y Desafíos Técnicos
+- **Prompt:** *"Integra Supabase Auth con expo-secure-store, navegación protegida con Stack.Protected, y sincronización de fotos a un bucket privado geocam con RLS en PostgreSQL."*
+- **Alucinación / Error de la IA detectado:**
+  1. La IA intentó guardar tokens JWT directamente en `SecureStore.setItemAsync(key, value)`. En iOS, `SecureStore` tiene un límite estricto de 2048 bytes y las sesiones completas de Supabase frecuentemente superan los 2.5 KB, provocando `KeychainItemNotFound` o rechazo del keychain.  
+     **Corrección:** Se implementó un adaptador con chunking transparente (`lib/secureStorage.ts`) que fragmenta el valor en bloques de 1000 caracteres.
+  2. La IA omitió el borrado coherente y rollback de huérfanos: si fallaba la inserción en la base de datos después de subir a Storage, dejaba la foto huérfana en el bucket.  
+     **Corrección:** Se implementó un rollback explícito en `services/cloudPhotos.ts` y borrado sincronizado bidireccional (C2/C3).
+  3. En Windows OneDrive, la detección de enlaces simbólicos de Metro arrojó `EINVAL: invalid argument, readlink` debido a reparse points de OneDrive.  
+     **Corrección:** Se incorporó un script postinstall `scripts/fix-reparse.js` que audita y previene la clasificación errónea de archivos como enlaces simbólicos.
+

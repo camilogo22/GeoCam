@@ -1,5 +1,5 @@
 // app/(tabs)/inicio.tsx
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,22 +8,66 @@ import {
   Pressable,
   Image,
   Dimensions,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGeoPhotos } from '@/context/GeoPhotosContext';
+import { useAuth } from '@/context/AuthContext';
+import { syncPendingPhotos } from '@/services/cloudPhotos';
 
 export default function InicioScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { photos, albums } = useGeoPhotos();
+  const { photos, albums, refresh } = useGeoPhotos();
+  const { user, signOut } = useAuth();
+
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Estadísticas rápidas
   const totalPhotos = photos.length;
   const favoritePhotos = photos.filter((p) => p.favorite).length;
   const gpsPhotos = photos.filter((p) => p.coords !== null).length;
   const totalAlbums = albums.length;
+  const pendingPhotos = photos.filter(
+    (p) => !p.syncedAt || (p.updatedAt && p.updatedAt > p.syncedAt)
+  );
+  const syncedPhotos = photos.filter(
+    (p) => p.syncedAt && (!p.updatedAt || p.syncedAt >= p.updatedAt)
+  );
+
+  const handleSyncAll = async () => {
+    if (!user?.id) {
+      Alert.alert('Sesión Requerida', 'Debes iniciar sesión para sincronizar fotos con Supabase.');
+      return;
+    }
+    if (pendingPhotos.length === 0) {
+      Alert.alert('Al día', 'Todas tus fotos ya están sincronizadas con la nube.');
+      return;
+    }
+
+    setIsSyncingAll(true);
+    setSyncProgress({ current: 0, total: pendingPhotos.length });
+
+    try {
+      const result = await syncPendingPhotos(photos, user.id, (current, total) => {
+        setSyncProgress({ current, total });
+      });
+      await refresh();
+      Alert.alert(
+        'Sincronización Completa',
+        `Fotos sincronizadas con éxito: ${result.uploaded}\nFallos: ${result.failed}`
+      );
+    } catch (err: any) {
+      Alert.alert('Error al sincronizar', err?.message || 'Ocurrió un error inesperado al subir las fotos.');
+    } finally {
+      setIsSyncingAll(false);
+      setSyncProgress(null);
+    }
+  };
 
   // Últimas fotos capturadas (máximo 6)
   const recentPhotos = photos.slice(0, 6);
@@ -40,22 +84,32 @@ export default function InicioScreen() {
       ]}
       showsVerticalScrollIndicator={false}
     >
-      {/* Header Principal */}
+      {/* Header Principal con perfil de usuario y botón de cerrar sesión */}
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
           <View style={styles.logoContainer}>
             <Ionicons name="camera" size={26} color="#10b981" />
           </View>
           <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.appName}>GeoCam</Text>
-            <Text style={styles.appTagline}>Cámara y Galería Geolocalizada</Text>
+            <Text style={styles.appName}>GeoCam Cloud</Text>
+            <Text style={styles.appTagline}>{user?.email ? user.email : 'Cámara y Galería Geolocalizada'}</Text>
           </View>
+          <Pressable
+            onPress={signOut}
+            style={({ pressed }) => [
+              styles.signOutBtn,
+              pressed && { opacity: 0.75 },
+            ]}
+            hitSlop={8}
+          >
+            <Ionicons name="log-out-outline" size={20} color="#ef4444" />
+          </Pressable>
         </View>
 
-        {/* Badge de estado Offline-First */}
+        {/* Badge de estado Offline-First & Cloud */}
         <View style={styles.statusBadge}>
           <View style={styles.statusDot} />
-          <Text style={styles.statusText}>SQLite & Drizzle ORM Activo</Text>
+          <Text style={styles.statusText}>SQLite · Drizzle ORM · Supabase</Text>
         </View>
       </View>
 
@@ -70,24 +124,60 @@ export default function InicioScreen() {
         </Text>
       </View>
 
+      {/* Banner de Sincronización con Supabase (Semana 8) */}
+      {pendingPhotos.length > 0 && (
+        <View style={styles.syncBanner}>
+          <View style={styles.syncBannerLeft}>
+            <View style={styles.syncBannerIcon}>
+              <Ionicons name="cloud-upload" size={20} color="#f59e0b" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.syncBannerTitle}>
+                {pendingPhotos.length} foto{pendingPhotos.length === 1 ? '' : 's'} por sincronizar
+              </Text>
+              <Text style={styles.syncBannerSubtitle}>
+                {isSyncingAll && syncProgress
+                  ? `Sincronizando ${syncProgress.current} de ${syncProgress.total}...`
+                  : 'Sube tus fotos a Supabase Storage privado'}
+              </Text>
+            </View>
+          </View>
+          <Pressable
+            onPress={handleSyncAll}
+            disabled={isSyncingAll}
+            style={({ pressed }) => [
+              styles.syncNowBtn,
+              pressed && { opacity: 0.8 },
+              isSyncingAll && { opacity: 0.6 },
+            ]}
+          >
+            {isSyncingAll ? (
+              <ActivityIndicator size="small" color="#0a0a0a" />
+            ) : (
+              <Text style={styles.syncNowBtnText}>Sincronizar</Text>
+            )}
+          </Pressable>
+        </View>
+      )}
+
       {/* Grid de Estadísticas */}
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
           <Ionicons name="images-outline" size={22} color="#10b981" />
           <Text style={styles.statNumber}>{totalPhotos}</Text>
-          <Text style={styles.statLabel}>Total Fotos</Text>
+          <Text style={styles.statLabel}>Total</Text>
+        </View>
+
+        <View style={styles.statCard}>
+          <Ionicons name="cloud-done-outline" size={22} color="#06b6d4" />
+          <Text style={styles.statNumber}>{syncedPhotos.length}</Text>
+          <Text style={styles.statLabel}>En Nube</Text>
         </View>
 
         <View style={styles.statCard}>
           <Ionicons name="heart" size={22} color="#ef4444" />
           <Text style={styles.statNumber}>{favoritePhotos}</Text>
           <Text style={styles.statLabel}>Favoritas</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Ionicons name="folder-outline" size={22} color="#3b82f6" />
-          <Text style={styles.statNumber}>{totalAlbums}</Text>
-          <Text style={styles.statLabel}>Álbumes</Text>
         </View>
 
         <View style={styles.statCard}>
@@ -260,6 +350,17 @@ const styles = StyleSheet.create({
     color: '#a3a3a3',
     marginTop: 2,
   },
+  signOutBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#1f1315',
+    borderWidth: 1,
+    borderColor: '#7f1d1d',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -308,6 +409,55 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#d4d4d4',
     lineHeight: 19,
+  },
+  syncBanner: {
+    backgroundColor: '#1c150c',
+    borderWidth: 1,
+    borderColor: '#d97706',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  syncBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 12,
+  },
+  syncBannerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#451a03',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  syncBannerTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#fbbf24',
+  },
+  syncBannerSubtitle: {
+    fontSize: 11,
+    color: '#d4d4d4',
+    marginTop: 2,
+  },
+  syncNowBtn: {
+    backgroundColor: '#f59e0b',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 90,
+  },
+  syncNowBtnText: {
+    color: '#000000',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   statsGrid: {
     flexDirection: 'row',

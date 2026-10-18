@@ -1,5 +1,6 @@
 // db/repositories/photos.ts
 import { eq, like, and, isNotNull, isNull, desc } from 'drizzle-orm';
+import * as Crypto from 'expo-crypto';
 import { db } from '@/db/client';
 import { photos, type PhotoRecord, type NewPhotoRecord } from '@/db/schema';
 import type { PhotoFilterOptions } from '@/types/geo';
@@ -11,6 +12,11 @@ export const photosRepo = {
    */
   listQuery(filters?: PhotoFilterOptions) {
     const conditions = [];
+
+    // C5: Filtrado por usuario propietario si se provee
+    if (filters?.ownerId) {
+      conditions.push(eq(photos.ownerId, filters.ownerId));
+    }
 
     if (filters?.search && filters.search.trim().length > 0) {
       conditions.push(like(photos.note, `%${filters.search.trim()}%`));
@@ -38,11 +44,15 @@ export const photosRepo = {
   /**
    * Genera la consulta Drizzle para fotos con coordenadas GPS (latitud no nula).
    */
-  withLocationQuery() {
+  withLocationQuery(ownerId?: string | null) {
+    const conditions = [isNotNull(photos.latitude)];
+    if (ownerId) {
+      conditions.push(eq(photos.ownerId, ownerId));
+    }
     return db
       .select()
       .from(photos)
-      .where(isNotNull(photos.latitude))
+      .where(and(...conditions))
       .orderBy(desc(photos.createdAt));
   },
 
@@ -63,9 +73,46 @@ export const photosRepo = {
 
   /**
    * Actualiza los datos de un registro de foto.
+   * Regla de Semana 8: actualiza también updatedAt.
    */
   async update(id: string, data: Partial<NewPhotoRecord>) {
-    return db.update(photos).set(data).where(eq(photos.id, id));
+    return db
+      .update(photos)
+      .set({
+        ...data,
+        updatedAt: Date.now(),
+      })
+      .where(eq(photos.id, id));
+  },
+
+  /**
+   * Marca una foto como sincronizada en Supabase sin alterar updatedAt (T5).
+   */
+  async markSynced(id: string, remotePath: string) {
+    return db
+      .update(photos)
+      .set({
+        remotePath,
+        syncedAt: Date.now(),
+      })
+      .where(eq(photos.id, id));
+  },
+
+  /**
+   * T4: Rellena clientId y updatedAt en fotos tomadas antes de la migración.
+   */
+  async ensureSyncFields() {
+    const rows = await db.select().from(photos).where(isNull(photos.clientId));
+    for (const row of rows) {
+      const generatedClientId = Crypto.randomUUID ? Crypto.randomUUID() : `cid_${Date.now()}_${Math.random()}`;
+      await db
+        .update(photos)
+        .set({
+          clientId: generatedClientId,
+          updatedAt: row.updatedAt ?? row.createdAt,
+        })
+        .where(eq(photos.id, row.id));
+    }
   },
 
   /**
@@ -82,4 +129,3 @@ export const photosRepo = {
     return db.delete(photos);
   },
 };
-

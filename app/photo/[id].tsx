@@ -17,12 +17,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getPhotoById, getAlbums } from '@/services/photosRepository';
 import { useGeoPhotos } from '@/context/GeoPhotosContext';
+import { useAuth } from '@/context/AuthContext';
+import { uploadPhoto } from '@/services/cloudPhotos';
 import type { GeoPhoto, AlbumItem } from '@/types/geo';
 
 export default function PhotoDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
   const { setNote, setFavorite, setAlbum, removePhoto, refresh, addAlbum, albums: contextAlbums } = useGeoPhotos();
 
   const [photo, setPhoto] = useState<(GeoPhoto & { albumName?: string | null }) | null>(null);
@@ -32,8 +35,12 @@ export default function PhotoDetailScreen() {
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploadingCloud, setUploadingCloud] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState('');
+
+  const isSynced = Boolean(photo?.syncedAt && (!photo?.updatedAt || photo.syncedAt >= photo.updatedAt));
+  const hasPendingChanges = Boolean(photo?.syncedAt && photo?.updatedAt && photo.updatedAt > photo.syncedAt);
 
   const displayAlbums = useMemo(() => {
     const map = new Map<number, AlbumItem>();
@@ -152,6 +159,29 @@ export default function PhotoDetailScreen() {
     }
   };
 
+  // Subir / Sincronizar foto individual con Supabase Storage y RLS
+  const handleUploadToCloud = async () => {
+    if (!photo) return;
+    if (!user?.id) {
+      Alert.alert('Sesión Requerida', 'Debes iniciar sesión con Supabase para subir fotos a la nube.');
+      return;
+    }
+    setUploadingCloud(true);
+    try {
+      await uploadPhoto(photo, user.id);
+      const updated = await getPhotoById(photo.id);
+      if (updated) {
+        setPhoto(updated);
+      }
+      await refresh();
+      Alert.alert('¡Sincronizada!', 'La foto se subió exitosamente a Supabase Storage y su registro se guardó en la base de datos.');
+    } catch (err: any) {
+      Alert.alert('Error al subir a la nube', err?.message || 'Ocurrió un error inesperado al subir la foto.');
+    } finally {
+      setUploadingCloud(false);
+    }
+  };
+
   // Cambiar Álbum
   const handleSelectAlbum = (albumId: number | null) => {
     setSelectedAlbumId(albumId);
@@ -228,6 +258,79 @@ export default function PhotoDetailScreen() {
             ? `${photo.coords.latitude.toFixed(5)}, ${photo.coords.longitude.toFixed(5)} (±${Math.round(photo.coords.accuracy ?? 0)}m)`
             : 'Sin coordenadas (Ubicación denegada)'}
         </Text>
+      </View>
+
+      {/* Sincronización en la Nube (Semana 8: Supabase Storage + RLS) */}
+      <View
+        style={[
+          styles.cloudCard,
+          isSynced ? styles.cloudCardSynced : hasPendingChanges ? styles.cloudCardChanges : styles.cloudCardPending,
+        ]}
+      >
+        <View style={styles.cloudHeaderRow}>
+          <View
+            style={[
+              styles.cloudIconBox,
+              {
+                backgroundColor: isSynced
+                  ? '#064e3b'
+                  : hasPendingChanges
+                  ? '#1e3a5f'
+                  : '#451a03',
+              },
+            ]}
+          >
+            <Ionicons
+              name={isSynced ? 'cloud-done' : hasPendingChanges ? 'cloud-upload' : 'cloud-offline'}
+              size={20}
+              color={isSynced ? '#10b981' : hasPendingChanges ? '#38bdf8' : '#f59e0b'}
+            />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.cloudCardTitle}>
+              {isSynced
+                ? 'Sincronizada en Supabase'
+                : hasPendingChanges
+                ? 'Cambios locales pendientes de sincronizar'
+                : 'Foto guardada sólo localmente'}
+            </Text>
+            <Text style={styles.cloudCardSubtitle}>
+              {photo.syncedAt
+                ? `Última sincr: ${new Date(photo.syncedAt).toLocaleString()}`
+                : 'Aún no se ha subido a tu bucket privado geocam'}
+            </Text>
+          </View>
+        </View>
+
+        {photo.remotePath && (
+          <View style={styles.cloudPathRow}>
+            <Ionicons name="shield-checkmark" size={14} color="#10b981" />
+            <Text style={styles.cloudPathText} numberOfLines={1}>
+              {photo.remotePath}
+            </Text>
+          </View>
+        )}
+
+        {(!isSynced || hasPendingChanges) && (
+          <Pressable
+            onPress={handleUploadToCloud}
+            disabled={uploadingCloud}
+            style={({ pressed }) => [
+              styles.cloudUploadBtn,
+              pressed && styles.btnPressed,
+              uploadingCloud && { opacity: 0.6 },
+            ]}
+          >
+            {uploadingCloud ? (
+              <ActivityIndicator size="small" color="#0a0a0a" style={{ marginRight: 8 }} />
+            ) : (
+              <Ionicons name="cloud-upload" size={18} color="#0a0a0a" style={{ marginRight: 8 }} />
+            )}
+            <Text style={styles.cloudUploadBtnText}>
+              {uploadingCloud ? 'Subiendo a Supabase...' : 'Subir a la nube'}
+            </Text>
+          </Pressable>
+        )}
       </View>
 
       {/* Botón de Favorito destacado */}
@@ -413,6 +516,77 @@ const styles = StyleSheet.create({
   },
   metaRow: { color: '#d4d4d4', fontSize: 14 },
   metaLabel: { color: '#10b981', fontWeight: 'bold' },
+  cloudCard: {
+    backgroundColor: '#171717',
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  cloudCardSynced: {
+    borderColor: '#059669',
+    backgroundColor: '#0d1f18',
+  },
+  cloudCardChanges: {
+    borderColor: '#0284c7',
+    backgroundColor: '#0c1a29',
+  },
+  cloudCardPending: {
+    borderColor: '#d97706',
+    backgroundColor: '#1c150c',
+  },
+  cloudHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cloudIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cloudCardTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  cloudCardSubtitle: {
+    color: '#a3a3a3',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  cloudPathRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 6,
+  },
+  cloudPathText: {
+    color: '#a3a3a3',
+    fontSize: 11,
+    flex: 1,
+    fontFamily: 'monospace',
+  },
+  cloudUploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10b981',
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginTop: 14,
+  },
+  cloudUploadBtnText: {
+    color: '#0a0a0a',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
   favoriteCard: {
     flexDirection: 'row',
     alignItems: 'center',

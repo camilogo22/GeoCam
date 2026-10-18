@@ -18,6 +18,12 @@ export interface GeoPhoto {
   albumId?: number | null;
   note?: string | null;
   favorite?: boolean;
+  // Campos de sincronización con Supabase (Semana 8)
+  clientId?: string | null;
+  updatedAt?: number | null;
+  remotePath?: string | null;
+  syncedAt?: number | null;
+  ownerId?: string | null;
 }
 
 export interface AlbumItem {
@@ -30,5 +36,5 @@ export interface PhotoFilterOptions {
   search?: string;
   albumId?: number | null | 'all';
   onlyFavorites?: boolean;
+  ownerId?: string | null;
 }
-

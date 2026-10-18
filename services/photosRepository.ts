@@ -2,6 +2,7 @@
 import { photosRepo } from '@/db/repositories/photos';
 import { albumsRepo } from '@/db/repositories/albums';
 import { persistPhoto, deletePhotoFile } from './photoFiles';
+import { deleteCloudPhoto } from './cloudPhotos';
 import type { GeoPhoto, Coords, AlbumItem, PhotoFilterOptions } from '@/types/geo';
 import type { PhotoRecord } from '@/db/schema';
 
@@ -22,6 +23,11 @@ function mapRecordToGeoPhoto(p: PhotoRecord): GeoPhoto {
     albumId: p.albumId ?? null,
     note: p.note ?? null,
     favorite: Boolean(p.favorite),
+    clientId: p.clientId ?? null,
+    updatedAt: p.updatedAt ?? null,
+    remotePath: p.remotePath ?? null,
+    syncedAt: p.syncedAt ?? null,
+    ownerId: p.ownerId ?? null,
   };
 }
 
@@ -30,8 +36,8 @@ export async function getFilteredPhotos(filters?: PhotoFilterOptions): Promise<G
   return records.map(mapRecordToGeoPhoto);
 }
 
-export async function getPhotosWithLocation(): Promise<GeoPhoto[]> {
-  const records = await photosRepo.withLocationQuery();
+export async function getPhotosWithLocation(ownerId?: string | null): Promise<GeoPhoto[]> {
+  const records = await photosRepo.withLocationQuery(ownerId);
   return records.map(mapRecordToGeoPhoto);
 }
 
@@ -58,13 +64,14 @@ export async function insertPhoto(input: {
   albumId?: number | null;
   note?: string | null;
   favorite?: boolean;
+  ownerId?: string | null;
 }): Promise<GeoPhoto> {
   // C5: Copiar foto a almacenamiento permanente
   const permanentUri = persistPhoto(input.uri);
   const id = input.id || String(Date.now());
   const createdAt = Date.now();
 
-  // T4: Convertir Coords a columnas planas latitude, longitude, accuracy
+  // T4: Convertir Coords a columnas planas latitude, longitude, accuracy y guardar ownerId
   await photosRepo.create({
     id,
     uri: permanentUri,
@@ -76,6 +83,7 @@ export async function insertPhoto(input: {
     albumId: input.albumId ?? null,
     note: input.note ?? null,
     favorite: input.favorite ?? false,
+    ownerId: input.ownerId ?? null,
   });
 
   return {
@@ -87,6 +95,7 @@ export async function insertPhoto(input: {
     albumId: input.albumId ?? null,
     note: input.note ?? null,
     favorite: input.favorite ?? false,
+    ownerId: input.ownerId ?? null,
   };
 }
 
@@ -102,9 +111,19 @@ export async function updatePhoto(
   await photosRepo.update(id, data);
 }
 
+/**
+ * C3: Borrado coherente. Si la foto está sincronizada, intenta borrarla en Supabase antes de eliminarla localmente.
+ */
 export async function deletePhoto(id: string): Promise<void> {
   const record = await photosRepo.findById(id);
   if (record) {
+    if (record.remotePath && record.clientId) {
+      try {
+        await deleteCloudPhoto(record.remotePath, record.clientId);
+      } catch (err) {
+        console.warn('Advertencia al eliminar foto en la nube:', err);
+      }
+    }
     deletePhotoFile(record.uri);
     await photosRepo.remove(id);
   }
@@ -137,4 +156,3 @@ export async function createAlbum(name: string): Promise<AlbumItem> {
 export async function deleteAlbum(id: number): Promise<void> {
   await albumsRepo.remove(id);
 }
-
