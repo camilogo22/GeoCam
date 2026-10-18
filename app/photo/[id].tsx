@@ -239,8 +239,19 @@ export default function PhotoDetailScreen() {
       </View>
 
       {/* Imagen Principal */}
-      <View style={styles.imageCard}>
+      <View style={[styles.imageCard, isSynced && styles.imageCardSynced]}>
         <Image source={{ uri: photo.uri }} style={styles.image} resizeMode="contain" />
+        {/* Badge distintivo sobre la foto */}
+        <View style={[styles.imageCloudBadge, isSynced ? styles.imageCloudBadgeSynced : styles.imageCloudBadgePending]}>
+          <Ionicons
+            name={isSynced ? 'cloud-done' : 'cloud-offline'}
+            size={14}
+            color={isSynced ? '#6ee7b7' : '#fbbf24'}
+          />
+          <Text style={[styles.imageCloudBadgeText, isSynced ? styles.imageCloudBadgeTextSynced : styles.imageCloudBadgeTextPending]}>
+            {isSynced ? 'En la nube (Supabase)' : 'Guardada solo localmente'}
+          </Text>
+        </View>
       </View>
 
       {/* Metadatos */}
@@ -511,6 +522,44 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#262626',
+    position: 'relative',
+  },
+  imageCardSynced: {
+    borderColor: '#10b981',
+    borderWidth: 2,
+    backgroundColor: '#0a1a12',
+  },
+  imageCloudBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 6,
+  },
+  imageCloudBadgeSynced: {
+    backgroundColor: 'rgba(6, 78, 59, 0.9)',
+    borderColor: '#10b981',
+  },
+  imageCloudBadgePending: {
+    backgroundColor: 'rgba(69, 26, 3, 0.9)',
+    borderColor: '#d97706',
+  },
+  imageCloudBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  imageCloudBadgeTextSynced: {
+    color: '#6ee7b7',
+  },
+  imageCloudBadgeTextPending: {
+    color: '#fcd34d',
   },
   image: { width: '100%', height: '100%' },
   metaCard: {

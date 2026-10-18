@@ -67,7 +67,7 @@ export async function insertPhoto(input: {
   ownerId?: string | null;
 }): Promise<GeoPhoto> {
   // C5: Copiar foto a almacenamiento permanente
-  const permanentUri = persistPhoto(input.uri);
+  const permanentUri = await persistPhoto(input.uri);
   const id = input.id || String(Date.now());
   const createdAt = Date.now();
 
@@ -124,14 +124,14 @@ export async function deletePhoto(id: string): Promise<void> {
         console.warn('Advertencia al eliminar foto en la nube:', err);
       }
     }
-    deletePhotoFile(record.uri);
+    await deletePhotoFile(record.uri);
     await photosRepo.remove(id);
   }
 }
 
 export async function clearAllPhotos(): Promise<void> {
   const records = await photosRepo.listQuery();
-  records.forEach((r) => deletePhotoFile(r.uri));
+  await Promise.all(records.map((r) => deletePhotoFile(r.uri)));
   await photosRepo.clearAll();
 }
 

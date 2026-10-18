@@ -10,24 +10,47 @@ import {
   StyleSheet,
   Modal,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useGeoPhotos } from '@/context/GeoPhotosContext';
+import { useGeoLocation } from '@/hooks/useGeoLocation';
+import { syncPendingPhotos } from '@/services/cloudPhotos';
 import type { GeoPhoto } from '@/types/geo';
+
+type CloudFilterType = 'all' | 'synced' | 'pending';
+
+type FilterChipItem =
+  | { id: string; type: 'general'; name: string }
+  | { id: string; type: 'cloud'; cloud: 'synced' | 'pending'; name: string }
+  | { id: string; type: 'favorite'; name: string }
+  | { id: string; type: 'album'; albumId: number | null; name: string };
 
 export default function GaleriaScreen() {
   const router = useRouter();
-  const { photos, albums, addAlbum, removeAlbum, setFavorite, removePhoto } = useGeoPhotos();
+  const { photos, albums, addAlbum, removeAlbum, setFavorite, removePhoto, addPhoto, refresh } = useGeoPhotos();
+  const geo = useGeoLocation({ watch: false });
 
   // Estados de filtros (C4)
   const [searchText, setSearchText] = useState('');
   const [selectedAlbumId, setSelectedAlbumId] = useState<number | null | 'all'>('all');
   const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const [cloudFilter, setCloudFilter] = useState<CloudFilterType>('all');
+
+  // Estado de sincronización en progreso desde galería
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Modal para crear nuevo álbum
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState('');
+
+  // Contador de fotos pendientes
+  const pendingPhotos = useMemo(
+    () => photos.filter((p) => !p.syncedAt || (p.updatedAt && p.updatedAt > p.syncedAt)),
+    [photos]
+  );
 
   // Mapa de nombres de álbumes para búsqueda rápida y etiquetas
   const albumMap = useMemo(() => {
@@ -36,10 +59,79 @@ export default function GaleriaScreen() {
     return map;
   }, [albums]);
 
-  // Filtrado reactivo: busca por nota descriptiva, nombre del álbum, origen o fecha
+  // Importar foto desde la galería del dispositivo
+  const handlePickFromGallery = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          'Permiso requerido',
+          'Se necesita permiso de acceso a tus fotos para poder importar desde la galería.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const coords =
+          geo.permission === 'granted'
+            ? geo.coords ?? (await geo.getCurrent())
+            : null;
+
+        const newPhoto = {
+          id: String(Date.now()),
+          uri: result.assets[0].uri,
+          coords,
+          source: 'gallery' as const,
+          createdAt: Date.now(),
+        };
+
+        await addPhoto(newPhoto);
+        Alert.alert('Foto importada', 'La imagen de la galería se importó y guardó exitosamente en GeoCam.');
+      }
+    } catch (e: any) {
+      console.warn('Error al seleccionar imagen de la galería:', e);
+      Alert.alert('Error', e?.message || 'No se pudo cargar la imagen desde la galería.');
+    }
+  };
+
+  // Sincronizar todas las fotos pendientes directamente desde la Galería
+  const handleSyncAllFromGallery = async () => {
+    if (pendingPhotos.length === 0) {
+      Alert.alert('Al día', 'Todas las fotos ya están respaldadas en la nube.');
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const result = await syncPendingPhotos(photos);
+      await refresh();
+      Alert.alert(
+        'Sincronización Completa',
+        `Fotos sincronizadas a Supabase: ${result.uploaded}\nFallos: ${result.failed}`
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Error al sincronizar fotos con la nube.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Filtrado reactivo: busca por nota descriptiva, nombre del álbum, origen o fecha + estado de nube
   const filteredPhotos = useMemo(() => {
     const query = searchText.trim().toLowerCase();
     return photos.filter((p) => {
+      const isSynced = Boolean(p.syncedAt && (!p.updatedAt || p.syncedAt >= p.updatedAt));
+
+      // Filtro de estado en la nube
+      if (cloudFilter === 'synced' && !isSynced) return false;
+      if (cloudFilter === 'pending' && isSynced) return false;
+
+      // Filtro de búsqueda textual
       if (query.length > 0) {
         const note = (p.note ?? '').toLowerCase();
         const albumName = (p.albumId ? albumMap.get(p.albumId) ?? '' : '').toLowerCase();
@@ -70,7 +162,7 @@ export default function GaleriaScreen() {
         return p.albumId === selectedAlbumId;
       }
     });
-  }, [photos, searchText, selectedAlbumId, onlyFavorites, albumMap]);
+  }, [photos, searchText, selectedAlbumId, onlyFavorites, cloudFilter, albumMap]);
 
   const handleCreateAlbum = async () => {
     if (!newAlbumName.trim()) {
@@ -124,10 +216,18 @@ export default function GaleriaScreen() {
 
   const renderPhotoItem = ({ item }: { item: GeoPhoto }) => {
     const albumName = item.albumId ? albumMap.get(item.albumId) : null;
+    const isCloudSynced = Boolean(
+      item.syncedAt && (!item.updatedAt || item.syncedAt >= item.updatedAt)
+    );
+
     return (
       <Pressable
         onPress={() => router.push(`/photo/${item.id}`)}
-        style={({ pressed }) => [styles.photoCard, pressed && styles.cardPressed]}
+        style={({ pressed }) => [
+          styles.photoCard,
+          isCloudSynced ? styles.photoCardSynced : styles.photoCardPending,
+          pressed && styles.cardPressed,
+        ]}
       >
         <View style={styles.thumbWrapper}>
           <Image source={{ uri: item.uri }} style={styles.photoThumb} />
@@ -160,40 +260,58 @@ export default function GaleriaScreen() {
             <Ionicons name="trash" size={14} color="#ef4444" />
           </Pressable>
 
-          {/* Indicador visual de estado de sincronización en la nube */}
+          {/* Distintivo de Nube o Local destacado en la tarjeta */}
           <View
             style={[
               styles.cardCloudBadge,
-              item.syncedAt && (!item.updatedAt || item.syncedAt >= item.updatedAt)
+              isCloudSynced
                 ? styles.cardCloudBadgeSynced
                 : styles.cardCloudBadgePending,
             ]}
           >
             <Ionicons
-              name={
-                item.syncedAt && (!item.updatedAt || item.syncedAt >= item.updatedAt)
-                  ? 'cloud-done'
-                  : 'cloud-offline'
-              }
+              name={isCloudSynced ? 'cloud-done' : 'cloud-offline'}
               size={12}
-              color={
-                item.syncedAt && (!item.updatedAt || item.syncedAt >= item.updatedAt)
-                  ? '#10b981'
-                  : '#f59e0b'
-              }
+              color={isCloudSynced ? '#6ee7b7' : '#fbbf24'}
+              style={{ marginRight: 4 }}
             />
+            <Text
+              style={[
+                styles.cardCloudBadgeText,
+                isCloudSynced
+                  ? styles.cardCloudBadgeTextSynced
+                  : styles.cardCloudBadgeTextPending,
+              ]}
+            >
+              {isCloudSynced ? 'En Nube' : 'Local'}
+            </Text>
           </View>
         </View>
 
-        <View style={styles.photoInfo}>
-          <Text style={styles.photoDate}>
-            {new Date(item.createdAt).toLocaleDateString()}
-          </Text>
+        <View style={[styles.photoInfo, isCloudSynced && styles.photoInfoSynced]}>
+          <View style={styles.photoHeaderRow}>
+            <Text style={styles.photoDate}>
+              {new Date(item.createdAt).toLocaleDateString()}
+            </Text>
+            {isCloudSynced ? (
+              <View style={styles.syncMiniTag}>
+                <Ionicons name="checkmark-circle" size={11} color="#10b981" />
+                <Text style={styles.syncMiniText}>Nube</Text>
+              </View>
+            ) : (
+              <View style={styles.pendingMiniTag}>
+                <Ionicons name="time-outline" size={11} color="#f59e0b" />
+                <Text style={styles.pendingMiniText}>Pendiente</Text>
+              </View>
+            )}
+          </View>
+
           {albumName && (
             <Text style={styles.photoAlbumTag} numberOfLines={1}>
-              {albumName}
+              📁 {albumName}
             </Text>
           )}
+
           {item.note && (
             <Text style={styles.photoNote} numberOfLines={1}>
               {item.note}
@@ -206,9 +324,46 @@ export default function GaleriaScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Encabezado con buscador (C4) */}
+      {/* Encabezado con buscador y botones de acción rápida */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Galería y Álbumes</Text>
+        <View style={styles.headerTopRow}>
+          <Text style={styles.headerTitle}>Galería y Álbumes</Text>
+          <View style={styles.headerActions}>
+            {/* Botón Importar desde Galería */}
+            <Pressable
+              onPress={handlePickFromGallery}
+              style={({ pressed }) => [styles.importBtn, pressed && { opacity: 0.8 }]}
+            >
+              <Ionicons name="images" size={15} color="#10b981" />
+              <Text style={styles.importBtnText}>Importar</Text>
+            </Pressable>
+
+            {/* Botón Sincronizar si hay pendientes */}
+            {pendingPhotos.length > 0 && (
+              <Pressable
+                onPress={handleSyncAllFromGallery}
+                disabled={isSyncing}
+                style={({ pressed }) => [
+                  styles.syncGalleryBtn,
+                  pressed && { opacity: 0.8 },
+                  isSyncing && { opacity: 0.6 },
+                ]}
+              >
+                {isSyncing ? (
+                  <ActivityIndicator size="small" color="#0a0a0a" />
+                ) : (
+                  <>
+                    <Ionicons name="cloud-upload" size={14} color="#0a0a0a" />
+                    <Text style={styles.syncGalleryBtnText}>
+                      Subir ({pendingPhotos.length})
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+          </View>
+        </View>
+
         <View style={styles.searchBar}>
           <Ionicons name="search" size={18} color="#a3a3a3" style={{ marginRight: 8 }} />
           <TextInput
@@ -226,45 +381,68 @@ export default function GaleriaScreen() {
         </View>
       </View>
 
-      {/* Barra de Filtros por Álbum y Favoritas (C4) */}
+      {/* Barra de Filtros con estado de Nube, Álbum y Favoritas */}
       <View style={styles.filterSection}>
-        <FlatList
+        <FlatList<FilterChipItem>
           horizontal
           showsHorizontalScrollIndicator={false}
           data={[
-            { id: 'all', name: 'Todas' },
-            { id: 'fav', name: 'Favoritas' },
-            { id: null, name: 'Sin Álbum' },
-            ...albums,
+            { id: 'all', type: 'general', name: 'Todas' },
+            { id: 'cloud_synced', type: 'cloud', cloud: 'synced', name: '☁️ En Nube' },
+            { id: 'cloud_pending', type: 'cloud', cloud: 'pending', name: '⏳ Pendientes' },
+            { id: 'fav', type: 'favorite', name: 'Favoritas' },
+            { id: 'no_album', type: 'album', albumId: null, name: 'Sin Álbum' },
+            ...albums.map((a) => ({ id: `alb_${a.id}`, type: 'album' as const, albumId: a.id, name: a.name })),
           ]}
           keyExtractor={(item) => String(item.id)}
           renderItem={({ item }) => {
-            const isFavItem = item.id === 'fav';
-            const isActive = isFavItem
-              ? onlyFavorites
-              : !onlyFavorites && selectedAlbumId === item.id;
+            let isActive = false;
+            if (item.type === 'general') {
+              isActive = !onlyFavorites && selectedAlbumId === 'all' && cloudFilter === 'all';
+            } else if (item.type === 'cloud') {
+              isActive = cloudFilter === item.cloud;
+            } else if (item.type === 'favorite') {
+              isActive = onlyFavorites;
+            } else if (item.type === 'album') {
+              isActive = !onlyFavorites && cloudFilter === 'all' && selectedAlbumId === item.albumId;
+            }
 
             return (
               <Pressable
                 onPress={() => {
-                  if (isFavItem) {
-                    setOnlyFavorites((prev) => !prev);
-                  } else {
+                  if (item.type === 'general') {
                     setOnlyFavorites(false);
-                    setSelectedAlbumId(item.id as number | null | 'all');
+                    setCloudFilter('all');
+                    setSelectedAlbumId('all');
+                  } else if (item.type === 'cloud') {
+                    setCloudFilter((prev) => (prev === item.cloud ? 'all' : item.cloud));
+                    setOnlyFavorites(false);
+                    setSelectedAlbumId('all');
+                  } else if (item.type === 'favorite') {
+                    setOnlyFavorites((prev) => !prev);
+                    setCloudFilter('all');
+                    setSelectedAlbumId('all');
+                  } else if (item.type === 'album') {
+                    setOnlyFavorites(false);
+                    setCloudFilter('all');
+                    setSelectedAlbumId(item.albumId);
                   }
                 }}
                 onLongPress={() => {
-                  if (typeof item.id === 'number') {
-                    handleConfirmDeleteAlbum(item.id, item.name);
+                  if (item.type === 'album' && typeof item.albumId === 'number') {
+                    handleConfirmDeleteAlbum(item.albumId, item.name);
                   }
                 }}
-                style={[styles.filterChip, isActive && styles.filterChipActive]}
+                style={[
+                  styles.filterChip,
+                  isActive && styles.filterChipActive,
+                  item.type === 'cloud' && item.cloud === 'synced' && styles.filterChipCloudSynced,
+                ]}
               >
-                {isFavItem && (
+                {item.type === 'favorite' && (
                   <Ionicons
                     name="heart"
-                    size={14}
+                    size={13}
                     color={isActive ? '#0a0a0a' : '#ef4444'}
                     style={{ marginRight: 4 }}
                   />
@@ -273,6 +451,7 @@ export default function GaleriaScreen() {
                   style={[
                     styles.filterChipText,
                     isActive && styles.filterChipTextActive,
+                    item.type === 'cloud' && item.cloud === 'synced' && isActive && { color: '#0a0a0a' },
                   ]}
                 >
                   {item.name}
@@ -298,7 +477,7 @@ export default function GaleriaScreen() {
           <Ionicons name="images-outline" size={48} color="#525252" />
           <Text style={styles.emptyTitle}>No hay fotos que coincidan</Text>
           <Text style={styles.emptySubtitle}>
-            Prueba ajustando los filtros o capturando nuevas fotos con GeoCam.
+            Prueba ajustando los filtros o importa nuevas fotos desde la galería o la cámara.
           </Text>
         </View>
       ) : (
@@ -348,7 +527,48 @@ export default function GaleriaScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   header: { paddingTop: 44, paddingHorizontal: 16, paddingBottom: 12 },
-  headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#ffffff', marginBottom: 12 },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#ffffff' },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  importBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#17252a',
+    borderWidth: 1,
+    borderColor: '#10b981',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  importBtnText: {
+    color: '#10b981',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  syncGalleryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10b981',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+  },
+  syncGalleryBtnText: {
+    color: '#0a0a0a',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -365,7 +585,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1f1f1f',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 20,
     marginRight: 8,
@@ -373,6 +593,7 @@ const styles = StyleSheet.create({
     borderColor: '#333333',
   },
   filterChipActive: { backgroundColor: '#10b981', borderColor: '#10b981' },
+  filterChipCloudSynced: { borderColor: '#059669' },
   filterChipText: { color: '#d4d4d4', fontSize: 13 },
   filterChipTextActive: { color: '#0a0a0a', fontWeight: 'bold' },
   addAlbumBtn: {
@@ -391,11 +612,23 @@ const styles = StyleSheet.create({
   photoCard: {
     flex: 1,
     margin: 6,
-    backgroundColor: '#171717',
-    borderRadius: 12,
+    borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#262626',
+  },
+  photoCardPending: {
+    backgroundColor: '#171717',
+    borderColor: '#33261a',
+  },
+  photoCardSynced: {
+    backgroundColor: '#0a1a12',
+    borderColor: '#10b981',
+    borderWidth: 2,
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cardPressed: { opacity: 0.8 },
   thumbWrapper: { position: 'relative', width: '100%', height: 140 },
@@ -420,23 +653,60 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 6,
     right: 6,
-    borderRadius: 10,
-    paddingHorizontal: 5,
+    borderRadius: 12,
+    paddingHorizontal: 7,
     paddingVertical: 3,
-    backgroundColor: 'rgba(0,0,0,0.75)',
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
   cardCloudBadgeSynced: {
+    backgroundColor: '#064e3b',
     borderColor: '#10b981',
   },
   cardCloudBadgePending: {
-    borderColor: '#f59e0b',
+    backgroundColor: 'rgba(69, 26, 3, 0.85)',
+    borderColor: '#d97706',
   },
-  photoInfo: { padding: 8 },
+  cardCloudBadgeText: {
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  cardCloudBadgeTextSynced: {
+    color: '#6ee7b7',
+  },
+  cardCloudBadgeTextPending: {
+    color: '#fcd34d',
+  },
+  photoInfo: { padding: 8, backgroundColor: '#171717' },
+  photoInfoSynced: { backgroundColor: '#081710' },
+  photoHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   photoDate: { color: '#a3a3a3', fontSize: 11 },
-  photoAlbumTag: { color: '#10b981', fontSize: 11, fontWeight: 'bold', marginTop: 2 },
+  syncMiniTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  syncMiniText: {
+    color: '#10b981',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  pendingMiniTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  pendingMiniText: {
+    color: '#f59e0b',
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  photoAlbumTag: { color: '#10b981', fontSize: 11, fontWeight: 'bold', marginTop: 3 },
   photoNote: { color: '#ffffff', fontSize: 12, marginTop: 2, fontWeight: '500' },
   emptyContainer: {
     flex: 1,
@@ -478,4 +748,3 @@ const styles = StyleSheet.create({
   modalBtnTextCancel: { color: '#ffffff', fontWeight: 'bold' },
   modalBtnTextConfirm: { color: '#000000', fontWeight: 'bold' },
 });
-

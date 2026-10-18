@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { File } from 'expo-file-system';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';
@@ -20,6 +21,74 @@ function generateUUID(): string {
   });
 }
 
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  if (typeof atob === 'function') {
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const clean = base64.replace(/=+$/, '');
+  const len = clean.length;
+  const bufferLength = (len * 3) >> 2;
+  const arrayBuffer = new ArrayBuffer(bufferLength);
+  const bytes = new Uint8Array(arrayBuffer);
+  let p = 0;
+  for (let i = 0; i < len; i += 4) {
+    const enc1 = chars.indexOf(clean[i]);
+    const enc2 = chars.indexOf(clean[i + 1]);
+    const enc3 = i + 2 < len ? chars.indexOf(clean[i + 2]) : 64;
+    const enc4 = i + 3 < len ? chars.indexOf(clean[i + 3]) : 64;
+    bytes[p++] = (enc1 << 2) | (enc2 >> 4);
+    if (enc3 !== 64 && p < bufferLength) bytes[p++] = ((enc2 & 15) << 4) | (enc3 >> 2);
+    if (enc4 !== 64 && p < bufferLength) bytes[p++] = ((enc3 & 3) << 6) | enc4;
+  }
+  return arrayBuffer;
+}
+
+export async function readPhotoAsArrayBuffer(uri: string): Promise<ArrayBuffer> {
+  // 1. Data URI base64
+  if (uri.startsWith('data:')) {
+    const commaIndex = uri.indexOf(',');
+    const base64Data = commaIndex !== -1 ? uri.substring(commaIndex + 1) : uri;
+    return base64ToArrayBuffer(base64Data);
+  }
+
+  // 2. Si no es web, intentar con File nativo de expo-file-system Next API
+  if (Platform.OS !== 'web') {
+    try {
+      const localFile = new File(uri);
+      if (localFile.exists) {
+        const buf = await localFile.arrayBuffer();
+        if (buf && buf.byteLength > 0) return buf;
+      }
+    } catch {
+      // Continuar a fallback de lectura
+    }
+
+    // 2b. FileSystem legacy readAsStringAsync (funciona con content:// de Android y file://)
+    try {
+      const FileSystem = await import('expo-file-system/legacy');
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      if (base64) {
+        return base64ToArrayBuffer(base64);
+      }
+    } catch {
+      // Continuar a fetch
+    }
+  }
+
+  // 3. Fallback a fetch para web o URLs http
+  const res = await fetch(uri);
+  return await res.arrayBuffer();
+}
+
 /**
  * T5 / C2: Sube una foto a Supabase Storage y registra su fila con metadatos en la tabla remota.
  * Funciona de forma segura con o sin sesión de usuario.
@@ -39,17 +108,12 @@ export async function uploadPhoto(photo: GeoPhoto, userId?: string | null): Prom
   const folder = userId || photo.ownerId || 'photos';
   const path = `${folder}/${clientId}.jpg`;
 
-  // 1. Archivo local -> ArrayBuffer (usa File.arrayBuffer nativo o fallback a fetch)
+  // 1. Archivo local -> ArrayBuffer (soporta file://, content://, base64 y web)
   let arrayBuffer: ArrayBuffer;
   try {
-    const localFile = new File(photo.uri);
-    if (localFile.exists) {
-      arrayBuffer = await localFile.arrayBuffer();
-    } else {
-      arrayBuffer = await fetch(photo.uri).then((res) => res.arrayBuffer());
-    }
-  } catch {
-    arrayBuffer = await fetch(photo.uri).then((res) => res.arrayBuffer());
+    arrayBuffer = await readPhotoAsArrayBuffer(photo.uri);
+  } catch (err: any) {
+    throw new Error(`No se pudo leer el archivo de la foto para subirlo: ${err?.message || err}`);
   }
 
   // 2. Subir al bucket en la carpeta correspondiente

@@ -81,27 +81,42 @@ export default function GeoCamScreen() {
 
   // Importar imagen desde la galería
   const handlePickFromGallery = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.7,
-    });
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          'Permiso requerido',
+          'Se necesita permiso de acceso a tus fotos para poder importar desde la galería.'
+        );
+        return;
+      }
 
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const coords =
-        geo.permission === 'granted'
-          ? geo.coords ?? (await geo.getCurrent())
-          : null;
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      });
 
-      const newPhoto = {
-        id: String(Date.now()),
-        uri: result.assets[0].uri,
-        coords,
-        source: 'gallery' as const,
-        createdAt: Date.now(),
-      };
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const coords =
+          geo.permission === 'granted'
+            ? geo.coords ?? (await geo.getCurrent())
+            : null;
 
-      const saved = await addPhoto(newPhoto);
-      setLastPhoto(saved);
+        const newPhoto = {
+          id: String(Date.now()),
+          uri: result.assets[0].uri,
+          coords,
+          source: 'gallery' as const,
+          createdAt: Date.now(),
+        };
+
+        const saved = await addPhoto(newPhoto);
+        setLastPhoto(saved);
+        Alert.alert('Foto importada', 'La imagen de la galería se guardó exitosamente en GeoCam.');
+      }
+    } catch (e: any) {
+      console.warn('Error al seleccionar imagen de la galería:', e);
+      Alert.alert('Error', e?.message || 'No se pudo cargar la imagen desde la galería.');
     }
   };
 

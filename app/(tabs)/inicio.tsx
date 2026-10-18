@@ -272,25 +272,45 @@ export default function InicioScreen() {
           </View>
         ) : (
           <View style={styles.recentGrid}>
-            {recentPhotos.map((photo) => (
-              <Pressable
-                key={photo.id}
-                onPress={() => router.push(`/photo/${photo.id}`)}
-                style={({ pressed }) => [styles.recentCard, pressed && styles.cardPressed]}
-              >
-                <Image source={{ uri: photo.uri }} style={styles.recentImage} />
-                {photo.favorite && (
-                  <View style={styles.recentFavoriteBadge}>
-                    <Ionicons name="heart" size={12} color="#ef4444" />
+            {recentPhotos.map((photo) => {
+              const isSynced = Boolean(photo.syncedAt && (!photo.updatedAt || photo.syncedAt >= photo.updatedAt));
+              return (
+                <Pressable
+                  key={photo.id}
+                  onPress={() => router.push(`/photo/${photo.id}`)}
+                  style={({ pressed }) => [
+                    styles.recentCard,
+                    isSynced && styles.recentCardSynced,
+                    pressed && styles.cardPressed,
+                  ]}
+                >
+                  <Image source={{ uri: photo.uri }} style={styles.recentImage} />
+                  {/* Badge de Nube o Local */}
+                  <View
+                    style={[
+                      styles.recentCloudBadge,
+                      isSynced ? styles.recentCloudBadgeSynced : styles.recentCloudBadgePending,
+                    ]}
+                  >
+                    <Ionicons
+                      name={isSynced ? 'cloud-done' : 'cloud-offline'}
+                      size={10}
+                      color={isSynced ? '#6ee7b7' : '#fbbf24'}
+                    />
                   </View>
-                )}
-                {photo.coords && (
-                  <View style={styles.recentGpsBadge}>
-                    <Ionicons name="location" size={10} color="#10b981" />
-                  </View>
-                )}
-              </Pressable>
-            ))}
+                  {photo.favorite && (
+                    <View style={styles.recentFavoriteBadge}>
+                      <Ionicons name="heart" size={12} color="#ef4444" />
+                    </View>
+                  )}
+                  {photo.coords && (
+                    <View style={styles.recentGpsBadge}>
+                      <Ionicons name="location" size={10} color="#10b981" />
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
         )}
       </View>
@@ -577,6 +597,26 @@ const styles = StyleSheet.create({
     position: 'relative',
     borderWidth: 1,
     borderColor: '#262626',
+  },
+  recentCardSynced: {
+    borderColor: '#10b981',
+    borderWidth: 2,
+  },
+  recentCloudBadge: {
+    position: 'absolute',
+    bottom: 6,
+    left: 6,
+    borderRadius: 8,
+    padding: 3,
+    borderWidth: 1,
+  },
+  recentCloudBadgeSynced: {
+    backgroundColor: 'rgba(6, 78, 59, 0.9)',
+    borderColor: '#10b981',
+  },
+  recentCloudBadgePending: {
+    backgroundColor: 'rgba(69, 26, 3, 0.9)',
+    borderColor: '#d97706',
   },
   recentImage: {
     width: '100%',
