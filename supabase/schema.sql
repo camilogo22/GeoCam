@@ -1,5 +1,5 @@
 -- GeoCam · Semana 8: Backend as a Service con Supabase (Sin barrera de Login)
--- Ejecutar en el SQL Editor de tu proyecto de Supabase
+-- Script SQL Idempotente para ejecutar en Supabase
 
 -- 1. Tabla remota de fotos
 create table if not exists public.photos (
@@ -21,24 +21,36 @@ create table if not exists public.photos (
 alter table public.photos enable row level security;
 
 -- Políticas RLS permitiendo operaciones con clave anónima o autenticada
+drop policy if exists "ver fotos" on public.photos;
 create policy "ver fotos" on public.photos
   for select to anon, authenticated
   using (true);
 
+drop policy if exists "crear fotos" on public.photos;
 create policy "crear fotos" on public.photos
   for insert to anon, authenticated
   with check (true);
 
+drop policy if exists "actualizar fotos" on public.photos;
 create policy "actualizar fotos" on public.photos
   for update to anon, authenticated
   using (true);
 
+drop policy if exists "borrar fotos" on public.photos;
 create policy "borrar fotos" on public.photos
   for delete to anon, authenticated
   using (true);
 
 -- 3. Habilitar Supabase Realtime para la tabla photos
-alter publication supabase_realtime add table public.photos;
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables 
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'photos'
+  ) then
+    alter publication supabase_realtime add table public.photos;
+  end if;
+end $$;
 
 -- 4. Bucket 'geocam' para almacenamiento de fotos
 insert into storage.buckets (id, name, public)
@@ -46,14 +58,17 @@ values ('geocam', 'geocam', true)
 on conflict (id) do update set public = true;
 
 -- 5. Políticas de Storage para el bucket 'geocam'
+drop policy if exists "subir fotos geocam" on storage.objects;
 create policy "subir fotos geocam" on storage.objects
   for insert to anon, authenticated
   with check (bucket_id = 'geocam');
 
+drop policy if exists "leer fotos geocam" on storage.objects;
 create policy "leer fotos geocam" on storage.objects
   for select to anon, authenticated
   using (bucket_id = 'geocam');
 
+drop policy if exists "borrar fotos geocam" on storage.objects;
 create policy "borrar fotos geocam" on storage.objects
   for delete to anon, authenticated
   using (bucket_id = 'geocam');
