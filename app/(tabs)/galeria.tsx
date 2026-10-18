@@ -110,10 +110,22 @@ export default function GaleriaScreen() {
     try {
       const result = await syncPendingPhotos(photos);
       await refresh();
-      Alert.alert(
-        'Sincronización Completa',
-        `Fotos sincronizadas a Supabase: ${result.uploaded}\nFallos: ${result.failed}`
-      );
+      if (result.failed > 0 && result.uploaded === 0) {
+        Alert.alert(
+          'Error al sincronizar',
+          `No se pudo subir ninguna foto.\n\nMotivo:\n${result.lastError || 'Verifica tu conexión y credenciales de Supabase.'}`
+        );
+      } else if (result.failed > 0) {
+        Alert.alert(
+          'Sincronización Parcial',
+          `Fotos sincronizadas a Supabase: ${result.uploaded}\nFallos: ${result.failed}\n\nDetalle: ${result.lastError}`
+        );
+      } else {
+        Alert.alert(
+          'Sincronización Completa',
+          `¡Éxito! Se subieron ${result.uploaded} foto${result.uploaded === 1 ? '' : 's'} a tu almacenamiento en la nube.`
+        );
+      }
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Error al sincronizar fotos con la nube.');
     } finally {

@@ -183,7 +183,7 @@ export async function syncPendingPhotos(
   photos: GeoPhoto[],
   onProgressOrUserId?: ((current: number, total: number) => void) | string | null,
   maybeOnProgress?: (current: number, total: number) => void
-): Promise<{ uploaded: number; failed: number }> {
+): Promise<{ uploaded: number; failed: number; lastError?: string }> {
   const userId = typeof onProgressOrUserId === 'string' ? onProgressOrUserId : null;
   const onProgress = typeof onProgressOrUserId === 'function' ? onProgressOrUserId : maybeOnProgress;
 
@@ -194,6 +194,7 @@ export async function syncPendingPhotos(
 
   let uploaded = 0;
   let failed = 0;
+  let lastError: string | undefined;
 
   for (let i = 0; i < pending.length; i++) {
     const photo = pending[i];
@@ -203,13 +204,14 @@ export async function syncPendingPhotos(
     try {
       await uploadPhoto(photo, userId);
       uploaded++;
-    } catch (e) {
+    } catch (e: any) {
       console.warn(`Error sincronizando foto ${photo.id}:`, e);
+      lastError = e?.message || String(e);
       failed++;
     }
   }
 
-  return { uploaded, failed };
+  return { uploaded, failed, lastError };
 }
 
 /**
