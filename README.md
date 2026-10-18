@@ -121,16 +121,15 @@ semana-7/
 ## Semana 8 — Backend as a Service con Supabase
 
 ### Novedades Integradas
-1. **Supabase Auth & Rutas Protegidas (T1, T2, T3)**:
-   - Pantalla de Login / Registro (`app/login.tsx`) integrada con `@supabase/supabase-js`.
-   - Persistencia segura de tokens en `expo-secure-store` dividida en chunks de 1000 caracteres (`lib/secureStorage.ts`) para compatibilidad completa con iOS sin superar límites de 2048 bytes.
-   - Navegación protegida con `Stack.Protected` en Expo Router (`app/_layout.tsx`), redirigiendo a login si no hay sesión activa.
-2. **Esquema SQLite Extendido con Drizzle (T4 / C5)**:
+1. **Acceso Inmediato sin Barrera de Login**:
+   - Apertura directa a las pestañas principales (`(tabs)/inicio`, cámara, galería y mapa) sin pantalla de bloqueo de inicio de sesión.
+   - Acceso completo a todas las fotos locales y sincronización libre hacia Supabase.
+2. **Esquema SQLite Extendido con Drizzle (T4)**:
    - Migración `0002_great_scarecrow.sql` agregando `clientId`, `updatedAt`, `remotePath`, `syncedAt` y `ownerId`.
-   - Aislamiento de datos por usuario (`ownerId`): las fotos locales se filtran por el ID del usuario autenticado.
-3. **Storage Privado y Políticas RLS (T5 / C2 / C3)**:
-   - Bucket privado `geocam` en Supabase con política de carpetas `(storage.foldername(name))[1] = auth.uid()::text`.
-   - Subida y prevención de huérfanos/duplicados con rollback ante fallos en `services/cloudPhotos.ts`.
+   - Compatibilidad total para registrar metadatos de sincronización preservando fotos previas.
+3. **Storage y Políticas de Nube (T5 / C2 / C3)**:
+   - Bucket `geocam` en Supabase con políticas RLS para lectura, subida y borrado.
+   - Prevención de huérfanos y duplicados con rollback ante fallos en `services/cloudPhotos.ts`.
    - Borrado coherente (C3): al eliminar una foto en SQLite, se elimina automáticamente su registro remoto y el archivo en Supabase Storage.
 4. **Sincronización Individual y Masiva (T5 / C1)**:
    - Detalle de Foto (`app/photo/[id].tsx`): Tarjeta de estado de sincronización y botón *"Subir a la nube"*.

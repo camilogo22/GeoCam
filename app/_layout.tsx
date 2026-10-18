@@ -6,41 +6,14 @@ import { StatusBar } from 'expo-status-bar';
 import { useMigrations } from 'drizzle-orm/expo-sqlite/migrator';
 import migrations from '@/drizzle/migrations';
 import { db } from '@/db/client';
-import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { GeoPhotosProvider } from '@/context/GeoPhotosContext';
 import { photosRepo } from '@/db/repositories/photos';
 
 function RootNavigator() {
-  const { session, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: '#0a0a0a',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <ActivityIndicator size="large" color="#10b981" />
-      </View>
-    );
-  }
-
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      {/* T2: Rutas protegidas: solo accesibles con sesión activa */}
-      <Stack.Protected guard={Boolean(session)}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="photo/[id]" options={{ presentation: 'card' }} />
-      </Stack.Protected>
-
-      {/* Pantalla pública de inicio de sesión y registro */}
-      <Stack.Protected guard={!session}>
-        <Stack.Screen name="login" options={{ headerShown: false }} />
-      </Stack.Protected>
-
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="photo/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="index" options={{ headerShown: false }} />
     </Stack>
   );
@@ -52,7 +25,7 @@ export default function RootLayout() {
     ? { success: true, error: null }
     : useMigrations(db, migrations);
 
-  // T4: Rellena clientId y updatedAt en fotos previas una vez ejecutada la migración
+  // Rellena clientId y updatedAt en fotos previas una vez ejecutada la migración
   useEffect(() => {
     if (success && !isWeb) {
       photosRepo.ensureSyncFields().catch((err) => {
@@ -95,11 +68,9 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      <GeoPhotosProvider>
-        <StatusBar style="light" />
-        <RootNavigator />
-      </GeoPhotosProvider>
-    </AuthProvider>
+    <GeoPhotosProvider>
+      <StatusBar style="light" />
+      <RootNavigator />
+    </GeoPhotosProvider>
   );
 }

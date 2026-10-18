@@ -17,7 +17,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getPhotoById, getAlbums } from '@/services/photosRepository';
 import { useGeoPhotos } from '@/context/GeoPhotosContext';
-import { useAuth } from '@/context/AuthContext';
 import { uploadPhoto } from '@/services/cloudPhotos';
 import type { GeoPhoto, AlbumItem } from '@/types/geo';
 
@@ -25,7 +24,6 @@ export default function PhotoDetailScreen() {
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { user } = useAuth();
   const { setNote, setFavorite, setAlbum, removePhoto, refresh, addAlbum, albums: contextAlbums } = useGeoPhotos();
 
   const [photo, setPhoto] = useState<(GeoPhoto & { albumName?: string | null }) | null>(null);
@@ -162,13 +160,9 @@ export default function PhotoDetailScreen() {
   // Subir / Sincronizar foto individual con Supabase Storage y RLS
   const handleUploadToCloud = async () => {
     if (!photo) return;
-    if (!user?.id) {
-      Alert.alert('Sesión Requerida', 'Debes iniciar sesión con Supabase para subir fotos a la nube.');
-      return;
-    }
     setUploadingCloud(true);
     try {
-      await uploadPhoto(photo, user.id);
+      await uploadPhoto(photo);
       const updated = await getPhotoById(photo.id);
       if (updated) {
         setPhoto(updated);

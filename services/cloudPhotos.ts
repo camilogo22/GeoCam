@@ -7,16 +7,17 @@ const BUCKET = 'geocam';
 
 /**
  * T5 / C2: Sube una foto a Supabase Storage y registra su fila con metadatos en la tabla remota.
- * Maneja prevención de huérfanos y duplicados.
+ * Funciona de forma segura con o sin sesión de usuario.
  */
-export async function uploadPhoto(photo: GeoPhoto, userId: string): Promise<string> {
+export async function uploadPhoto(photo: GeoPhoto, userId?: string | null): Promise<string> {
   const clientId = photo.clientId || photo.id;
-  const path = `${userId}/${clientId}.jpg`;
+  const folder = userId || photo.ownerId || 'photos';
+  const path = `${folder}/${clientId}.jpg`;
 
   // 1. Archivo local -> ArrayBuffer
   const arrayBuffer = await fetch(photo.uri).then((res) => res.arrayBuffer());
 
-  // 2. Subir al bucket privado en la carpeta del usuario
+  // 2. Subir al bucket privado en la carpeta correspondiente
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
     .upload(path, arrayBuffer, {
@@ -32,19 +33,24 @@ export async function uploadPhoto(photo: GeoPhoto, userId: string): Promise<stri
   const takenAtDate = new Date(photo.createdAt);
   const updatedAtDate = photo.updatedAt ? new Date(photo.updatedAt) : takenAtDate;
 
+  const payload: Record<string, any> = {
+    client_id: clientId,
+    storage_path: path,
+    latitude: photo.coords?.latitude ?? null,
+    longitude: photo.coords?.longitude ?? null,
+    note: photo.note ?? null,
+    favorite: Boolean(photo.favorite),
+    source: photo.source || 'camera',
+    taken_at: takenAtDate.toISOString(),
+    updated_at: updatedAtDate.toISOString(),
+  };
+
+  if (userId || photo.ownerId) {
+    payload.user_id = userId || photo.ownerId;
+  }
+
   const { error: insertError } = await supabase.from('photos').upsert(
-    {
-      user_id: userId,
-      client_id: clientId,
-      storage_path: path,
-      latitude: photo.coords?.latitude ?? null,
-      longitude: photo.coords?.longitude ?? null,
-      note: photo.note ?? null,
-      favorite: Boolean(photo.favorite),
-      source: photo.source || 'camera',
-      taken_at: takenAtDate.toISOString(),
-      updated_at: updatedAtDate.toISOString(),
-    },
+    payload,
     { onConflict: 'client_id' }
   );
 
@@ -69,9 +75,12 @@ export async function uploadPhoto(photo: GeoPhoto, userId: string): Promise<stri
  */
 export async function syncPendingPhotos(
   photos: GeoPhoto[],
-  userId: string,
-  onProgress?: (current: number, total: number) => void
+  onProgressOrUserId?: ((current: number, total: number) => void) | string | null,
+  maybeOnProgress?: (current: number, total: number) => void
 ): Promise<{ uploaded: number; failed: number }> {
+  const userId = typeof onProgressOrUserId === 'string' ? onProgressOrUserId : null;
+  const onProgress = typeof onProgressOrUserId === 'function' ? onProgressOrUserId : maybeOnProgress;
+
   // Una foto está pendiente si syncedAt es nulo o si updatedAt es posterior a syncedAt
   const pending = photos.filter(
     (p) => !p.syncedAt || (p.updatedAt && p.updatedAt > p.syncedAt)
@@ -128,3 +137,4 @@ export async function getSignedPhotoUrl(remotePath: string, expiresInSeconds = 3
 
   return data.signedUrl;
 }
+

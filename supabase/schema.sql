@@ -1,10 +1,10 @@
--- GeoCam · Semana 8: Backend as a Service con Supabase
+-- GeoCam · Semana 8: Backend as a Service con Supabase (Sin barrera de Login)
 -- Ejecutar en el SQL Editor de tu proyecto de Supabase
 
 -- 1. Tabla remota de fotos
 create table if not exists public.photos (
   id bigint generated always as identity primary key,
-  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  user_id uuid default auth.uid(), -- opcional si no hay login
   client_id uuid not null unique, -- UUID único creado en el teléfono que identifica la foto
   storage_path text not null unique,
   latitude double precision,
@@ -20,52 +20,40 @@ create table if not exists public.photos (
 -- 2. Habilitar Row Level Security (RLS)
 alter table public.photos enable row level security;
 
--- Políticas RLS: cada usuario solo ve, crea, actualiza y borra sus propias fotos
-create policy "ver las mías" on public.photos
-  for select to authenticated
-  using ((select auth.uid()) = user_id);
+-- Políticas RLS permitiendo operaciones con clave anónima o autenticada
+create policy "ver fotos" on public.photos
+  for select to anon, authenticated
+  using (true);
 
-create policy "crear las mías" on public.photos
-  for insert to authenticated
-  with check ((select auth.uid()) = user_id);
+create policy "crear fotos" on public.photos
+  for insert to anon, authenticated
+  with check (true);
 
-create policy "actualizar las mías" on public.photos
-  for update to authenticated
-  using ((select auth.uid()) = user_id);
+create policy "actualizar fotos" on public.photos
+  for update to anon, authenticated
+  using (true);
 
-create policy "borrar las mías" on public.photos
-  for delete to authenticated
-  using ((select auth.uid()) = user_id);
+create policy "borrar fotos" on public.photos
+  for delete to anon, authenticated
+  using (true);
 
 -- 3. Habilitar Supabase Realtime para la tabla photos
 alter publication supabase_realtime add table public.photos;
 
--- 4. Bucket privado 'geocam': fotos personales protegidas por RLS
+-- 4. Bucket 'geocam' para almacenamiento de fotos
 insert into storage.buckets (id, name, public)
-values ('geocam', 'geocam', false)
-on conflict (id) do nothing;
+values ('geocam', 'geocam', true)
+on conflict (id) do update set public = true;
 
--- 5. Políticas de Storage para el bucket privado 'geocam'
--- Convención: cada archivo va en <id-de-usuario>/<archivo>.jpg
+-- 5. Políticas de Storage para el bucket 'geocam'
+create policy "subir fotos geocam" on storage.objects
+  for insert to anon, authenticated
+  with check (bucket_id = 'geocam');
 
-create policy "subir a mi carpeta" on storage.objects
-  for insert to authenticated
-  with check (
-    bucket_id = 'geocam'
-    and (storage.foldername(name))[1] = (select auth.uid()::text)
-  );
+create policy "leer fotos geocam" on storage.objects
+  for select to anon, authenticated
+  using (bucket_id = 'geocam');
 
-create policy "leer mi carpeta" on storage.objects
-  for select to authenticated
-  using (
-    bucket_id = 'geocam'
-    and (storage.foldername(name))[1] = (select auth.uid()::text)
-  );
-
-create policy "borrar de mi carpeta" on storage.objects
-  for delete to authenticated
-  using (
-    bucket_id = 'geocam'
-    and (storage.foldername(name))[1] = (select auth.uid()::text)
-  );
-
+create policy "borrar fotos geocam" on storage.objects
+  for delete to anon, authenticated
+  using (bucket_id = 'geocam');

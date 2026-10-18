@@ -15,14 +15,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGeoPhotos } from '@/context/GeoPhotosContext';
-import { useAuth } from '@/context/AuthContext';
 import { syncPendingPhotos } from '@/services/cloudPhotos';
 
 export default function InicioScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { photos, albums, refresh } = useGeoPhotos();
-  const { user, signOut } = useAuth();
 
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ current: number; total: number } | null>(null);
@@ -40,10 +38,6 @@ export default function InicioScreen() {
   );
 
   const handleSyncAll = async () => {
-    if (!user?.id) {
-      Alert.alert('Sesión Requerida', 'Debes iniciar sesión para sincronizar fotos con Supabase.');
-      return;
-    }
     if (pendingPhotos.length === 0) {
       Alert.alert('Al día', 'Todas tus fotos ya están sincronizadas con la nube.');
       return;
@@ -53,7 +47,7 @@ export default function InicioScreen() {
     setSyncProgress({ current: 0, total: pendingPhotos.length });
 
     try {
-      const result = await syncPendingPhotos(photos, user.id, (current, total) => {
+      const result = await syncPendingPhotos(photos, (current, total) => {
         setSyncProgress({ current, total });
       });
       await refresh();
@@ -84,7 +78,7 @@ export default function InicioScreen() {
       ]}
       showsVerticalScrollIndicator={false}
     >
-      {/* Header Principal con perfil de usuario y botón de cerrar sesión */}
+      {/* Header Principal */}
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
           <View style={styles.logoContainer}>
@@ -92,18 +86,8 @@ export default function InicioScreen() {
           </View>
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={styles.appName}>GeoCam Cloud</Text>
-            <Text style={styles.appTagline}>{user?.email ? user.email : 'Cámara y Galería Geolocalizada'}</Text>
+            <Text style={styles.appTagline}>Cámara y Galería Geolocalizada</Text>
           </View>
-          <Pressable
-            onPress={signOut}
-            style={({ pressed }) => [
-              styles.signOutBtn,
-              pressed && { opacity: 0.75 },
-            ]}
-            hitSlop={8}
-          >
-            <Ionicons name="log-out-outline" size={20} color="#ef4444" />
-          </Pressable>
         </View>
 
         {/* Badge de estado Offline-First & Cloud */}
@@ -349,17 +333,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#a3a3a3',
     marginTop: 2,
-  },
-  signOutBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#1f1315',
-    borderWidth: 1,
-    borderColor: '#7f1d1d',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
   },
   statusBadge: {
     flexDirection: 'row',
