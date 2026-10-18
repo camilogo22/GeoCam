@@ -86,14 +86,16 @@ export const photosRepo = {
   },
 
   /**
-   * Marca una foto como sincronizada en Supabase sin alterar updatedAt (T5).
+   * Marca una foto como sincronizada en Supabase igualando syncedAt y updatedAt.
    */
   async markSynced(id: string, remotePath: string) {
+    const now = Date.now();
     return db
       .update(photos)
       .set({
         remotePath,
-        syncedAt: Date.now(),
+        syncedAt: now,
+        updatedAt: now,
       })
       .where(eq(photos.id, id));
   },

@@ -159,6 +159,30 @@ export default function GaleriaScreen() {
           >
             <Ionicons name="trash" size={14} color="#ef4444" />
           </Pressable>
+
+          {/* Indicador visual de estado de sincronización en la nube */}
+          <View
+            style={[
+              styles.cardCloudBadge,
+              item.syncedAt && (!item.updatedAt || item.syncedAt >= item.updatedAt)
+                ? styles.cardCloudBadgeSynced
+                : styles.cardCloudBadgePending,
+            ]}
+          >
+            <Ionicons
+              name={
+                item.syncedAt && (!item.updatedAt || item.syncedAt >= item.updatedAt)
+                  ? 'cloud-done'
+                  : 'cloud-offline'
+              }
+              size={12}
+              color={
+                item.syncedAt && (!item.updatedAt || item.syncedAt >= item.updatedAt)
+                  ? '#10b981'
+                  : '#f59e0b'
+              }
+            />
+          </View>
         </View>
 
         <View style={styles.photoInfo}>
@@ -391,6 +415,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.65)',
     borderRadius: 14,
     padding: 6,
+  },
+  cardCloudBadge: {
+    position: 'absolute',
+    bottom: 6,
+    right: 6,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardCloudBadgeSynced: {
+    borderColor: '#10b981',
+  },
+  cardCloudBadgePending: {
+    borderColor: '#f59e0b',
   },
   photoInfo: { padding: 8 },
   photoDate: { color: '#a3a3a3', fontSize: 11 },

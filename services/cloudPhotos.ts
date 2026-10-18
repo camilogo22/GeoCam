@@ -1,23 +1,58 @@
-// services/cloudPhotos.ts
+import { File } from 'expo-file-system';
+import { eq } from 'drizzle-orm';
+import { db } from '@/db/client';
+import { photos } from '@/db/schema';
 import { supabase } from '@/lib/supabase';
 import { photosRepo } from '@/db/repositories/photos';
 import type { GeoPhoto } from '@/types/geo';
 
 const BUCKET = 'geocam';
 
+function generateUUID(): string {
+  try {
+    const ExpoCrypto = require('expo-crypto');
+    if (ExpoCrypto?.randomUUID) return ExpoCrypto.randomUUID();
+  } catch {}
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 /**
  * T5 / C2: Sube una foto a Supabase Storage y registra su fila con metadatos en la tabla remota.
  * Funciona de forma segura con o sin sesión de usuario.
  */
 export async function uploadPhoto(photo: GeoPhoto, userId?: string | null): Promise<string> {
-  const clientId = photo.clientId || photo.id;
+  // Asegurar que el clientId sea un UUID válido para compatibilidad total
+  let clientId = photo.clientId;
+  if (!clientId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId)) {
+    clientId = generateUUID();
+    try {
+      await db.update(photos).set({ clientId }).where(eq(photos.id, photo.id));
+    } catch {
+      // Ignora si falla la actualización previa
+    }
+  }
+
   const folder = userId || photo.ownerId || 'photos';
   const path = `${folder}/${clientId}.jpg`;
 
-  // 1. Archivo local -> ArrayBuffer
-  const arrayBuffer = await fetch(photo.uri).then((res) => res.arrayBuffer());
+  // 1. Archivo local -> ArrayBuffer (usa File.arrayBuffer nativo o fallback a fetch)
+  let arrayBuffer: ArrayBuffer;
+  try {
+    const localFile = new File(photo.uri);
+    if (localFile.exists) {
+      arrayBuffer = await localFile.arrayBuffer();
+    } else {
+      arrayBuffer = await fetch(photo.uri).then((res) => res.arrayBuffer());
+    }
+  } catch {
+    arrayBuffer = await fetch(photo.uri).then((res) => res.arrayBuffer());
+  }
 
-  // 2. Subir al bucket privado en la carpeta correspondiente
+  // 2. Subir al bucket en la carpeta correspondiente
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
     .upload(path, arrayBuffer, {
@@ -30,8 +65,8 @@ export async function uploadPhoto(photo: GeoPhoto, userId?: string | null): Prom
   }
 
   // 3. Fila remota con metadatos
+  const now = Date.now();
   const takenAtDate = new Date(photo.createdAt);
-  const updatedAtDate = photo.updatedAt ? new Date(photo.updatedAt) : takenAtDate;
 
   const payload: Record<string, any> = {
     client_id: clientId,
@@ -42,11 +77,12 @@ export async function uploadPhoto(photo: GeoPhoto, userId?: string | null): Prom
     favorite: Boolean(photo.favorite),
     source: photo.source || 'camera',
     taken_at: takenAtDate.toISOString(),
-    updated_at: updatedAtDate.toISOString(),
+    updated_at: new Date(now).toISOString(),
   };
 
-  if (userId || photo.ownerId) {
-    payload.user_id = userId || photo.ownerId;
+  const effectiveUserId = userId || photo.ownerId;
+  if (effectiveUserId) {
+    payload.user_id = effectiveUserId;
   }
 
   const { error: insertError } = await supabase.from('photos').upsert(
@@ -64,7 +100,7 @@ export async function uploadPhoto(photo: GeoPhoto, userId?: string | null): Prom
     throw new Error(`Error al registrar foto en base de datos: ${insertError.message}`);
   }
 
-  // 4. Marcar la foto local como sincronizada sin alterar updatedAt
+  // 4. Marcar la foto local como sincronizada
   await photosRepo.markSynced(photo.id, path);
 
   return path;

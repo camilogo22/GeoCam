@@ -16,3 +16,6 @@ web-build/
 # Environment variables
 .env
 .env*.local
+
+# Agents & MCP
+.agents/

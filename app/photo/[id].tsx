@@ -162,11 +162,18 @@ export default function PhotoDetailScreen() {
     if (!photo) return;
     setUploadingCloud(true);
     try {
-      await uploadPhoto(photo);
-      const updated = await getPhotoById(photo.id);
-      if (updated) {
-        setPhoto(updated);
-      }
+      const remotePath = await uploadPhoto(photo);
+      const now = Date.now();
+      setPhoto((prev) =>
+        prev
+          ? {
+              ...prev,
+              remotePath,
+              syncedAt: now,
+              updatedAt: now,
+            }
+          : prev
+      );
       await refresh();
       Alert.alert('¡Sincronizada!', 'La foto se subió exitosamente a Supabase Storage y su registro se guardó en la base de datos.');
     } catch (err: any) {
@@ -305,7 +312,7 @@ export default function PhotoDetailScreen() {
           </View>
         )}
 
-        {(!isSynced || hasPendingChanges) && (
+        {(!isSynced || hasPendingChanges) ? (
           <Pressable
             onPress={handleUploadToCloud}
             disabled={uploadingCloud}
@@ -324,6 +331,11 @@ export default function PhotoDetailScreen() {
               {uploadingCloud ? 'Subiendo a Supabase...' : 'Subir a la nube'}
             </Text>
           </Pressable>
+        ) : (
+          <View style={styles.cloudSuccessRow}>
+            <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+            <Text style={styles.cloudSuccessText}>Foto sincronizada en tiempo real con Supabase</Text>
+          </View>
         )}
       </View>
 
@@ -580,6 +592,21 @@ const styles = StyleSheet.create({
     color: '#0a0a0a',
     fontSize: 13,
     fontWeight: 'bold',
+  },
+  cloudSuccessRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#064e3b',
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginTop: 14,
+    gap: 8,
+  },
+  cloudSuccessText: {
+    color: '#a7f3d0',
+    fontSize: 13,
+    fontWeight: '600',
   },
   favoriteCard: {
     flexDirection: 'row',
