@@ -3,18 +3,20 @@ import { AppState, Platform } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 import { secureStorage } from './secureStorage';
 
-const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const key = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const DEFAULT_SUPABASE_URL = 'https://xrsajlzauklhnyekuuks.supabase.co';
 
-if (!url || !key) {
-  console.warn(
-    'Faltan EXPO_PUBLIC_SUPABASE_URL o EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY en .env. Configure sus credenciales.'
-  );
-}
+const rawUrl = process.env.EXPO_PUBLIC_SUPABASE_URL?.trim();
+// Si el URL en .env no está o contiene placeholders como "xxxxxxxx" o "placeholder", usar el URL real del proyecto
+export const supabaseUrl =
+  rawUrl && !rawUrl.includes('xxxxxxxx') && !rawUrl.includes('placeholder')
+    ? rawUrl
+    : DEFAULT_SUPABASE_URL;
+
+export const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() || '';
 
 export const supabase = createClient(
-  url || 'https://placeholder.supabase.co',
-  key || 'placeholder-key',
+  supabaseUrl,
+  supabaseKey || 'placeholder-key',
   {
     auth: {
       storage: Platform.OS === 'web' ? undefined : secureStorage,
@@ -35,4 +37,3 @@ if (Platform.OS !== 'web') {
     }
   });
 }
-

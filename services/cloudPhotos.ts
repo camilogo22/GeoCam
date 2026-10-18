@@ -3,7 +3,7 @@ import { File } from 'expo-file-system';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client';
 import { photos } from '@/db/schema';
-import { supabase } from '@/lib/supabase';
+import { supabase, supabaseKey } from '@/lib/supabase';
 import { photosRepo } from '@/db/repositories/photos';
 import type { GeoPhoto } from '@/types/geo';
 
@@ -94,6 +94,12 @@ export async function readPhotoAsArrayBuffer(uri: string): Promise<ArrayBuffer> 
  * Funciona de forma segura con o sin sesión de usuario.
  */
 export async function uploadPhoto(photo: GeoPhoto, userId?: string | null): Promise<string> {
+  if (!supabaseKey || supabaseKey.includes('xxxxxxxx') || supabaseKey === 'placeholder-key') {
+    throw new Error(
+      'Falta configurar tu clave anon/public de Supabase en el archivo .env (EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY). Copia la anon public key desde el panel de Supabase: https://supabase.com/dashboard/project/xrsajlzauklhnyekuuks/settings/api'
+    );
+  }
+
   // Asegurar que el clientId sea un UUID válido para compatibilidad total
   let clientId = photo.clientId;
   if (!clientId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId)) {
